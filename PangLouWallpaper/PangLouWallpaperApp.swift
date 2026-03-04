@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct SimpleWallpaperApp: App {
+struct PangLouWallpaperApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

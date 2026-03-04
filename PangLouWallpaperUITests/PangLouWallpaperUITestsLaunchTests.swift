@@ -7,7 +7,7 @@
 
 import XCTest
 
-final class SimpleWallpaperUITestsLaunchTests: XCTestCase {
+final class PangLouWallpaperUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true
