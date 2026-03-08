@@ -1,24 +1,50 @@
+//
+//  ContentView.swift
+//  SimpleWallpaper
+//
+
 import SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = WallpaperViewModel()
-    @State private var isDarkMode: Bool = true
+    @AppStorage("isDarkMode") private var isDarkMode: Bool = true
 
     var body: some View {
         ZStack {
             (isDarkMode ? Color(red: 0.08, green: 0.09, blue: 0.10) : Color(red: 0.95, green: 0.95, blue: 0.97))
                 .ignoresSafeArea()
             
-            VStack(spacing: 0) {
-                TopNavigationBarView(viewModel: viewModel, isDarkMode: $isDarkMode)
-                    .padding(.top, 20)
-                    .padding(.horizontal, 30)
-                
-                WallpaperGridView(viewModel: viewModel)
-                    .padding(.top, 15)
-                
-                BottomFloatingBarView(viewModel: viewModel)
-                    .padding(.bottom, 25)
+            // 🌟 核心修复 1：利用 GeometryReader 拿到真实窗口尺寸，死死锁住边框
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    TopNavigationBarView(viewModel: viewModel, isDarkMode: $isDarkMode)
+                        .padding(.top, 20)
+                        .padding(.horizontal, 30)
+                    
+                    WallpaperGridView(viewModel: viewModel)
+                        .padding(.top, 15)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    
+                    if viewModel.currentTab != .upload || viewModel.uploadMode == .manage {
+                        BottomFloatingBarView(viewModel: viewModel)
+                            .padding(.top, 10)
+                            .padding(.bottom, 25)
+                    }
+                }
+                // 🌟 强制规定：VStack 尺寸绝对不能超过当前可用空间！
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+            
+            if viewModel.editingWallpaper != nil {
+                Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { viewModel.cancelEdit() }
+                // 保证弹窗永远在屏幕正中间
+                VStack {
+                    Spacer()
+                    EditWallpaperPopupView(viewModel: viewModel)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    Spacer()
+                }
+                .zIndex(100)
             }
         }
         .frame(minWidth: 1100, minHeight: 750)
@@ -47,20 +73,12 @@ struct ContentView: View {
             }
             .animation(.easeInOut, value: viewModel.statusMessage)
         )
-        // 💡 修改点：只要点击界面的其他地方，任何弹开的菜单都会自动收起
         .onTapGesture {
             if viewModel.showTypeMenu || viewModel.showCategoryMenu || viewModel.showResolutionMenu || viewModel.showColorMenu {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    viewModel.showTypeMenu = false
-                    viewModel.showCategoryMenu = false
-                    viewModel.showResolutionMenu = false
-                    viewModel.showColorMenu = false
+                    viewModel.showTypeMenu = false; viewModel.showCategoryMenu = false; viewModel.showResolutionMenu = false; viewModel.showColorMenu = false
                 }
             }
         }
     }
-}
-
-#Preview {
-    ContentView()
 }

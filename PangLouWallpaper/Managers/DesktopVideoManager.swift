@@ -16,6 +16,34 @@ class DesktopVideoManager: NSObject {
     private var videoPlayers: [AVPlayer] = []
     private var playerLooperObservers: [NSObjectProtocol] = []
 
+    // 🌟 新增核心代码：在初始化时，注册“系统唤醒”监听器
+    override init() {
+        super.init()
+        
+        // 监听系统通知：屏幕重新亮起时
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(wakeUpAndPlay),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
+        
+        // 监听系统通知：电脑从深度休眠中恢复时
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(wakeUpAndPlay),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+    
+    // 🌟 新增核心代码：当收到唤醒通知时，强制所有视频重新播放
+    @objc private func wakeUpAndPlay() {
+        for player in videoPlayers {
+            player.play()
+        }
+    }
+
     func clearVideoWallpaper() {
         for player in videoPlayers {
             player.pause()
@@ -61,5 +89,10 @@ class DesktopVideoManager: NSObject {
             videoWindows.append(window)
             videoPlayers.append(player)
         }
+    }
+    
+    // 清理机制：当这个管家被销毁时，记得把监听器也拆掉（虽然单例一般不会被销毁，但这是个好习惯）
+    deinit {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 }

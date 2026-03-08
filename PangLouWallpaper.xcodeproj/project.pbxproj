@@ -24,25 +24,25 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		353E19302F48476C009F460B /* SimpleWallpaper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleWallpaper.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		353E193D2F48476D009F460B /* SimpleWallpaperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleWallpaperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		353E19472F48476D009F460B /* SimpleWallpaperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleWallpaperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		353E19302F48476C009F460B /* PangLouWallpaper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PangLouWallpaper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		353E193D2F48476D009F460B /* PangLouWallpaperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PangLouWallpaperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		353E19472F48476D009F460B /* PangLouWallpaperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PangLouWallpaperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		353E19322F48476C009F460B /* SimpleWallpaper */ = {
+		353E19322F48476C009F460B /* PangLouWallpaper */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SimpleWallpaper;
+			path = PangLouWallpaper;
 			sourceTree = "<group>";
 		};
-		353E19402F48476D009F460B /* SimpleWallpaperTests */ = {
+		353E19402F48476D009F460B /* PangLouWallpaperTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SimpleWallpaperTests;
+			path = PangLouWallpaperTests;
 			sourceTree = "<group>";
 		};
-		353E194A2F48476D009F460B /* SimpleWallpaperUITests */ = {
+		353E194A2F48476D009F460B /* PangLouWallpaperUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SimpleWallpaperUITests;
+			path = PangLouWallpaperUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,9 +75,9 @@
 		353E19272F48476C009F460B = {
 			isa = PBXGroup;
 			children = (
-				353E19322F48476C009F460B /* SimpleWallpaper */,
-				353E19402F48476D009F460B /* SimpleWallpaperTests */,
-				353E194A2F48476D009F460B /* SimpleWallpaperUITests */,
+				353E19322F48476C009F460B /* PangLouWallpaper */,
+				353E19402F48476D009F460B /* PangLouWallpaperTests */,
+				353E194A2F48476D009F460B /* PangLouWallpaperUITests */,
 				353E19312F48476C009F460B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,9 +85,9 @@
 		353E19312F48476C009F460B /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				353E19302F48476C009F460B /* SimpleWallpaper.app */,
-				353E193D2F48476D009F460B /* SimpleWallpaperTests.xctest */,
-				353E19472F48476D009F460B /* SimpleWallpaperUITests.xctest */,
+				353E19302F48476C009F460B /* PangLouWallpaper.app */,
+				353E193D2F48476D009F460B /* PangLouWallpaperTests.xctest */,
+				353E19472F48476D009F460B /* PangLouWallpaperUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,9 +95,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		353E192F2F48476C009F460B /* SimpleWallpaper */ = {
+		353E192F2F48476C009F460B /* PangLouWallpaper */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 353E19512F48476D009F460B /* Build configuration list for PBXNativeTarget "SimpleWallpaper" */;
+			buildConfigurationList = 353E19512F48476D009F460B /* Build configuration list for PBXNativeTarget "PangLouWallpaper" */;
 			buildPhases = (
 				353E192C2F48476C009F460B /* Sources */,
 				353E192D2F48476C009F460B /* Frameworks */,
@@ -108,18 +108,18 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				353E19322F48476C009F460B /* SimpleWallpaper */,
+				353E19322F48476C009F460B /* PangLouWallpaper */,
 			);
-			name = SimpleWallpaper;
+			name = PangLouWallpaper;
 			packageProductDependencies = (
 			);
 			productName = SimpleWallpaper;
-			productReference = 353E19302F48476C009F460B /* SimpleWallpaper.app */;
+			productReference = 353E19302F48476C009F460B /* PangLouWallpaper.app */;
 			productType = "com.apple.product-type.application";
 		};
-		353E193C2F48476D009F460B /* SimpleWallpaperTests */ = {
+		353E193C2F48476D009F460B /* PangLouWallpaperTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 353E19542F48476D009F460B /* Build configuration list for PBXNativeTarget "SimpleWallpaperTests" */;
+			buildConfigurationList = 353E19542F48476D009F460B /* Build configuration list for PBXNativeTarget "PangLouWallpaperTests" */;
 			buildPhases = (
 				353E19392F48476D009F460B /* Sources */,
 				353E193A2F48476D009F460B /* Frameworks */,
@@ -131,18 +131,18 @@
 				353E193F2F48476D009F460B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				353E19402F48476D009F460B /* SimpleWallpaperTests */,
+				353E19402F48476D009F460B /* PangLouWallpaperTests */,
 			);
-			name = SimpleWallpaperTests;
+			name = PangLouWallpaperTests;
 			packageProductDependencies = (
 			);
 			productName = SimpleWallpaperTests;
-			productReference = 353E193D2F48476D009F460B /* SimpleWallpaperTests.xctest */;
+			productReference = 353E193D2F48476D009F460B /* PangLouWallpaperTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		353E19462F48476D009F460B /* SimpleWallpaperUITests */ = {
+		353E19462F48476D009F460B /* PangLouWallpaperUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 353E19572F48476D009F460B /* Build configuration list for PBXNativeTarget "SimpleWallpaperUITests" */;
+			buildConfigurationList = 353E19572F48476D009F460B /* Build configuration list for PBXNativeTarget "PangLouWallpaperUITests" */;
 			buildPhases = (
 				353E19432F48476D009F460B /* Sources */,
 				353E19442F48476D009F460B /* Frameworks */,
@@ -154,13 +154,13 @@
 				353E19492F48476D009F460B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				353E194A2F48476D009F460B /* SimpleWallpaperUITests */,
+				353E194A2F48476D009F460B /* PangLouWallpaperUITests */,
 			);
-			name = SimpleWallpaperUITests;
+			name = PangLouWallpaperUITests;
 			packageProductDependencies = (
 			);
 			productName = SimpleWallpaperUITests;
-			productReference = 353E19472F48476D009F460B /* SimpleWallpaperUITests.xctest */;
+			productReference = 353E19472F48476D009F460B /* PangLouWallpaperUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -186,7 +186,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 353E192B2F48476C009F460B /* Build configuration list for PBXProject "SimpleWallpaper" */;
+			buildConfigurationList = 353E192B2F48476C009F460B /* Build configuration list for PBXProject "PangLouWallpaper" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -200,9 +200,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				353E192F2F48476C009F460B /* SimpleWallpaper */,
-				353E193C2F48476D009F460B /* SimpleWallpaperTests */,
-				353E19462F48476D009F460B /* SimpleWallpaperUITests */,
+				353E192F2F48476C009F460B /* PangLouWallpaper */,
+				353E193C2F48476D009F460B /* PangLouWallpaperTests */,
+				353E19462F48476D009F460B /* PangLouWallpaperUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -258,12 +258,12 @@
 /* Begin PBXTargetDependency section */
 		353E193F2F48476D009F460B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 353E192F2F48476C009F460B /* SimpleWallpaper */;
+			target = 353E192F2F48476C009F460B /* PangLouWallpaper */;
 			targetProxy = 353E193E2F48476D009F460B /* PBXContainerItemProxy */;
 		};
 		353E19492F48476D009F460B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 353E192F2F48476C009F460B /* SimpleWallpaper */;
+			target = 353E192F2F48476C009F460B /* PangLouWallpaper */;
 			targetProxy = 353E19482F48476D009F460B /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -461,7 +461,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimpleWallpaper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimpleWallpaper";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PangLouWallpaper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PangLouWallpaper";
 			};
 			name = Debug;
 		};
@@ -481,7 +481,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimpleWallpaper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimpleWallpaper";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PangLouWallpaper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PangLouWallpaper";
 			};
 			name = Release;
 		};
@@ -524,7 +524,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		353E192B2F48476C009F460B /* Build configuration list for PBXProject "SimpleWallpaper" */ = {
+		353E192B2F48476C009F460B /* Build configuration list for PBXProject "PangLouWallpaper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				353E194F2F48476D009F460B /* Debug */,
@@ -533,7 +533,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		353E19512F48476D009F460B /* Build configuration list for PBXNativeTarget "SimpleWallpaper" */ = {
+		353E19512F48476D009F460B /* Build configuration list for PBXNativeTarget "PangLouWallpaper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				353E19522F48476D009F460B /* Debug */,
@@ -542,7 +542,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		353E19542F48476D009F460B /* Build configuration list for PBXNativeTarget "SimpleWallpaperTests" */ = {
+		353E19542F48476D009F460B /* Build configuration list for PBXNativeTarget "PangLouWallpaperTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				353E19552F48476D009F460B /* Debug */,
@@ -551,7 +551,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		353E19572F48476D009F460B /* Build configuration list for PBXNativeTarget "SimpleWallpaperUITests" */ = {
+		353E19572F48476D009F460B /* Build configuration list for PBXNativeTarget "PangLouWallpaperUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				353E19582F48476D009F460B /* Debug */,

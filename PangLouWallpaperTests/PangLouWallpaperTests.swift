@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import SimpleWallpaper
+@testable import PangLouWallpaper
 
 struct PangLouWallpaperTests {
 
