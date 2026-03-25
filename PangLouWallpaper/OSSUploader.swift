@@ -11,8 +11,8 @@ class OSSUploader {
     static let shared = OSSUploader()
     
     // ⚠️ 请换回你自己的阿里云密钥！
-    private let accessKeyId = "LTAI5tJJqxxgoHkcfMrjqseV"
-    private let accessKeySecret = "Q7ERd4vYrmqLkPXlp09pw3Pp1HthoT"
+    private let accessKeyId = ""
+    private let accessKeySecret = ""
     private let endpoint = "oss-cn-beijing.aliyuncs.com"
     private let bucketName = "wallpapers-pl"
     private let remotePath = "wallpapers/"
