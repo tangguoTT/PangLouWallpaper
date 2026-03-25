@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-// 🌟 新增：必须引入 AppKit，因为我们要调用苹果电脑底层的窗口管理权限
 import AppKit
 
 // -----------------------------------------------------------
@@ -54,9 +53,14 @@ struct PangLouWallpaperApp: App {
                 NSApp.activate(ignoringOtherApps: true)
             }
             
-            Divider() // 画一条华丽的灰色分割线
-            
-            // 下拉菜单按钮二：彻底退出
+            Divider()
+
+            Button("随机换一张壁纸") {
+                NotificationCenter.default.post(name: .randomWallpaperTrigger, object: nil)
+            }
+
+            Divider()
+
             Button("退出胖楼壁纸") {
                 NSApplication.shared.terminate(nil)
             }

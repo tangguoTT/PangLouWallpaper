@@ -59,9 +59,16 @@ class DesktopVideoManager: NSObject {
         playerLooperObservers.removeAll()
     }
 
-    func playVideoOnDesktop(url: URL) {
+    func playVideoOnDesktop(url: URL, screenName: String = "全部") {
         clearVideoWallpaper()
-        for screen in NSScreen.screens {
+        let targetScreens: [NSScreen]
+        if screenName == "全部" {
+            targetScreens = NSScreen.screens
+        } else {
+            let filtered = NSScreen.screens.filter { $0.localizedName == screenName }
+            targetScreens = filtered.isEmpty ? NSScreen.screens : filtered
+        }
+        for screen in targetScreens {
             let window = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))

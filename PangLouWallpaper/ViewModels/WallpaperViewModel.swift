@@ -26,7 +26,10 @@ class WallpaperViewModel: ObservableObject {
     @Published var cacheSizeString: String = "0 MB"
     
     @Published var currentTab: AppTab = .pc { didSet { currentPage = 0 } }
-    
+    @Published var searchText: String = "" { didSet { currentPage = 0 } }
+    @Published var previewItem: WallpaperItem? = nil
+    @Published var currentWallpaperPath: String = ""
+
     // 🌟 新增：绑定当前的上传大厅模式
     @Published var uploadMode: UploadMode = .pending { didSet { currentPage = 0 } }
     
@@ -45,7 +48,16 @@ class WallpaperViewModel: ObservableObject {
     
     @Published var isSlideshowEnabled: Bool = false { didSet { UserDefaults.standard.set(isSlideshowEnabled, forKey: "isSlideshowEnabled"); setupSlideshowTimer() } }
     @Published var slideshowInterval: Double = 3600 { didSet { UserDefaults.standard.set(slideshowInterval, forKey: "slideshowInterval"); setupSlideshowTimer() } }
+    @Published var isSlideshowRandom: Bool = false { didSet { UserDefaults.standard.set(isSlideshowRandom, forKey: "isSlideshowRandom") } }
+    @Published var nextSlideshowCountdown: String = ""
     @Published var playlistIds: [String] = [] { didSet { UserDefaults.standard.set(playlistIds, forKey: "playlistIds"); setupSlideshowTimer() } }
+    @Published var favoriteIds: [String] = [] { didSet { UserDefaults.standard.set(favoriteIds, forKey: "favoriteIds") } }
+    @Published var showOnlyFavorites: Bool = false { didSet { currentPage = 0 } }
+    @Published var wallpaperFit: WallpaperFit = .fill { didSet { UserDefaults.standard.set(wallpaperFit.rawValue, forKey: "wallpaperFit") } }
+    @Published var targetScreenName: String = "全部" { didSet { UserDefaults.standard.set(targetScreenName, forKey: "targetScreenName") } }
+    @Published var showAbout: Bool = false
+
+    var availableScreenNames: [String] { ["全部"] + NSScreen.screens.map { $0.localizedName } }
     
     @Published var pendingUploads: [PendingUploadItem] = []
     
@@ -58,7 +70,10 @@ class WallpaperViewModel: ObservableObject {
     private var progressObservations: [String: NSKeyValueObservation] = [:]
     
     private var slideshowTimer: Timer?
+    private var countdownTimer: Timer?
+    private var nextSlideshowDate: Date = Date()
     private var currentSlideshowIndex = 0
+    private var cancellables = Set<AnyCancellable>()
     let jsonConfigURL = URL(string: "https://wallpapers-pl.oss-cn-beijing.aliyuncs.com/wallpapers/wallpapers.json")!
 
     var displayWallpapers: [WallpaperItem] {
@@ -66,11 +81,13 @@ class WallpaperViewModel: ObservableObject {
         if currentTab == .downloaded { items = items.filter { FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: $0.fullURL).path) } }
         else if currentTab == .slideshow { items = items.filter { playlistIds.contains($0.id) && FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: $0.fullURL).path) } }
         
+        if showOnlyFavorites { items = items.filter { favoriteIds.contains($0.id) } }
         if selectedType == "静态壁纸" { items = items.filter { !$0.isVideo } } else if selectedType == "动态壁纸" { items = items.filter { $0.isVideo } }
         if selectedCategory != "全部" { let keyword = selectedCategory.components(separatedBy: " | ").first ?? selectedCategory; items = items.filter { $0.title.contains(keyword) } }
         if selectedColor != "全部" { items = items.filter { $0.title.contains(selectedColor) } }
         if selectedResolution != "全部" { items = items.filter { $0.title.contains(selectedResolution) } }
         if !customWidth.isEmpty || !customHeight.isEmpty { items = items.filter { $0.title.contains(customWidth) || $0.title.contains(customHeight) } }
+        if !searchText.isEmpty { items = items.filter { $0.title.localizedCaseInsensitiveContains(searchText) } }
         return items
     }
 
@@ -88,7 +105,42 @@ class WallpaperViewModel: ObservableObject {
         let savedInterval = UserDefaults.standard.double(forKey: "slideshowInterval")
         self.slideshowInterval = savedInterval == 0 ? 3600 : savedInterval
         self.playlistIds = UserDefaults.standard.stringArray(forKey: "playlistIds") ?? []
+        self.isSlideshowRandom = UserDefaults.standard.bool(forKey: "isSlideshowRandom")
+        self.favoriteIds = UserDefaults.standard.stringArray(forKey: "favoriteIds") ?? []
+        if let fitRaw = UserDefaults.standard.string(forKey: "wallpaperFit"), let fit = WallpaperFit(rawValue: fitRaw) { self.wallpaperFit = fit }
+        self.targetScreenName = UserDefaults.standard.string(forKey: "targetScreenName") ?? "全部"
         setupSlideshowTimer()
+        self.currentWallpaperPath = UserDefaults.standard.string(forKey: "LastWallpaperPath") ?? ""
+        NotificationCenter.default.publisher(for: .randomWallpaperTrigger)
+            .sink { [weak self] _ in self?.randomWallpaper() }
+            .store(in: &cancellables)
+    }
+
+    func randomWallpaper() {
+        let downloaded = allWallpapers.filter { FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: $0.fullURL).path) }
+        let pool = downloaded.isEmpty ? allWallpapers : downloaded
+        guard let item = pool.randomElement() else { statusMessage = "⚠️ 暂无可用壁纸"; return }
+        setWallpaper(item: item)
+    }
+
+    func importLocalWallpaper() {
+        let panel = NSOpenPanel()
+        panel.title = "选择本地壁纸"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.image, .movie]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let isVideo = ["mp4", "mov", "m4v", "avi"].contains(url.pathExtension.lowercased())
+        if isVideo {
+            DesktopVideoManager.shared.playVideoOnDesktop(url: url, screenName: targetScreenName)
+            Task { await syncLockScreenWallpaper(for: url) }
+        } else {
+            applyStaticWallpaper(url: url)
+        }
+        UserDefaults.standard.set(url.path, forKey: "LastWallpaperPath")
+        currentWallpaperPath = url.path
+        statusMessage = "✅ 已应用本地壁纸"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if self.statusMessage == "✅ 已应用本地壁纸" { self.statusMessage = "" } }
     }
 
     func fetchCloudData() { Task { do { let (data, _) = try await URLSession.shared.data(from: jsonConfigURL); let items = try JSONDecoder().decode([WallpaperItem].self, from: data); await MainActor.run { self.allWallpapers = items } } catch { await MainActor.run { self.statusMessage = "❌ 同步失败" } } } }
@@ -178,11 +230,42 @@ class WallpaperViewModel: ObservableObject {
 
     func downloadWallpaper(item: WallpaperItem) { if downloadProgress[item.id] != nil { return }; DispatchQueue.main.async { self.downloadProgress[item.id] = 0.01 }; Task { do { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); if !FileManager.default.fileExists(atPath: localURL.path) { let tempURL = try await downloadWithProgress(url: item.fullURL, itemId: item.id, isSilent: false); try FileManager.default.moveItem(at: tempURL, to: localURL) }; await MainActor.run { self.downloadProgress.removeValue(forKey: item.id); self.calculateCacheSize(); self.objectWillChange.send() } } catch { if (error as? URLError)?.code != .cancelled { await MainActor.run { self.downloadProgress.removeValue(forKey: item.id); self.statusMessage = "❌ 下载失败" } } } } }
 
-    func setWallpaper(item: WallpaperItem, isSilent: Bool = false) { if downloadProgress[item.id] != nil { return }; if !isSilent { DispatchQueue.main.async { self.downloadProgress[item.id] = 0.01 } }; Task { do { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); if !FileManager.default.fileExists(atPath: localURL.path) { let tempURL = try await downloadWithProgress(url: item.fullURL, itemId: item.id, isSilent: isSilent); try FileManager.default.moveItem(at: tempURL, to: localURL) }; await MainActor.run { self.downloadProgress.removeValue(forKey: item.id); if item.isVideo { DesktopVideoManager.shared.playVideoOnDesktop(url: localURL) } else { DesktopVideoManager.shared.clearVideoWallpaper(); self.applyStaticWallpaper(url: localURL) }; UserDefaults.standard.set(localURL.path, forKey: "LastWallpaperPath"); self.calculateCacheSize(); self.objectWillChange.send(); if !isSilent { statusMessage = "🎉 设置完成"; DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if self.statusMessage == "🎉 设置完成" { self.statusMessage = "" } } } }; if item.isVideo { await syncLockScreenWallpaper(for: localURL) } } catch { if (error as? URLError)?.code != .cancelled { if !isSilent { await MainActor.run { self.downloadProgress.removeValue(forKey: item.id); self.statusMessage = "❌ 操作失败" } } } } } }
+    func setWallpaper(item: WallpaperItem, isSilent: Bool = false) { if downloadProgress[item.id] != nil { return }; if !isSilent { DispatchQueue.main.async { self.downloadProgress[item.id] = 0.01 } }; Task { do { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); if !FileManager.default.fileExists(atPath: localURL.path) { let tempURL = try await downloadWithProgress(url: item.fullURL, itemId: item.id, isSilent: isSilent); try FileManager.default.moveItem(at: tempURL, to: localURL) }; await MainActor.run { self.downloadProgress.removeValue(forKey: item.id); if item.isVideo { DesktopVideoManager.shared.playVideoOnDesktop(url: localURL, screenName: self.targetScreenName) } else { DesktopVideoManager.shared.clearVideoWallpaper(); self.applyStaticWallpaper(url: localURL) }; UserDefaults.standard.set(localURL.path, forKey: "LastWallpaperPath"); self.currentWallpaperPath = localURL.path; self.calculateCacheSize(); self.objectWillChange.send(); if !isSilent { statusMessage = "🎉 设置完成"; DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if self.statusMessage == "🎉 设置完成" { self.statusMessage = "" } } } }; if item.isVideo { await syncLockScreenWallpaper(for: localURL) } } catch { if (error as? URLError)?.code != .cancelled { if !isSilent { await MainActor.run { self.downloadProgress.removeValue(forKey: item.id); self.statusMessage = "❌ 操作失败" } } } } } }
     
     func toggleInPlaylist(item: WallpaperItem) { if let index = playlistIds.firstIndex(of: item.id) { playlistIds.remove(at: index); statusMessage = "已移出轮播列表" } else { playlistIds.append(item.id); statusMessage = "🌟 已加入轮播" }; DispatchQueue.main.asyncAfter(deadline: .now() + 2) { if self.statusMessage.contains("轮播") { self.statusMessage = "" } } }
-    private func setupSlideshowTimer() { slideshowTimer?.invalidate(); if isSlideshowEnabled && !playlistIds.isEmpty { slideshowTimer = Timer.scheduledTimer(withTimeInterval: slideshowInterval, repeats: true) { [weak self] _ in self?.playNextWallpaper() }; if let timer = slideshowTimer { RunLoop.main.add(timer, forMode: .common) } } }
-    private func playNextWallpaper() { guard !playlistIds.isEmpty else { return }; currentSlideshowIndex = (currentSlideshowIndex + 1) % playlistIds.count; if let item = allWallpapers.first(where: { $0.id == playlistIds[currentSlideshowIndex] }) { setWallpaper(item: item, isSilent: true) } }
+    func toggleFavorite(item: WallpaperItem) { if let index = favoriteIds.firstIndex(of: item.id) { favoriteIds.remove(at: index); statusMessage = "已取消收藏" } else { favoriteIds.append(item.id); statusMessage = "❤️ 已加入收藏" }; DispatchQueue.main.asyncAfter(deadline: .now() + 2) { if self.statusMessage.contains("收藏") { self.statusMessage = "" } } }
+
+    private func setupSlideshowTimer() {
+        slideshowTimer?.invalidate()
+        countdownTimer?.invalidate()
+        nextSlideshowCountdown = ""
+        guard isSlideshowEnabled && !playlistIds.isEmpty else { return }
+        nextSlideshowDate = Date().addingTimeInterval(slideshowInterval)
+        slideshowTimer = Timer.scheduledTimer(withTimeInterval: slideshowInterval, repeats: true) { [weak self] _ in
+            self?.playNextWallpaper()
+            self?.nextSlideshowDate = Date().addingTimeInterval(self?.slideshowInterval ?? 3600)
+        }
+        if let t = slideshowTimer { RunLoop.main.add(t, forMode: .common) }
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateCountdown() }
+        if let t = countdownTimer { RunLoop.main.add(t, forMode: .common) }
+    }
+
+    private func updateCountdown() {
+        let remaining = max(0, nextSlideshowDate.timeIntervalSinceNow)
+        let h = Int(remaining) / 3600; let m = (Int(remaining) % 3600) / 60; let s = Int(remaining) % 60
+        nextSlideshowCountdown = h > 0 ? "下次切换 \(h)h \(String(format: "%02d", m))m" : "下次切换 \(m):\(String(format: "%02d", s))"
+    }
+
+    private func playNextWallpaper() {
+        guard !playlistIds.isEmpty else { return }
+        if isSlideshowRandom {
+            let randomIndex = Int.random(in: 0..<playlistIds.count)
+            currentSlideshowIndex = randomIndex
+        } else {
+            currentSlideshowIndex = (currentSlideshowIndex + 1) % playlistIds.count
+        }
+        if let item = allWallpapers.first(where: { $0.id == playlistIds[currentSlideshowIndex] }) { setWallpaper(item: item, isSilent: true) }
+    }
     func deleteSingleCache(for item: WallpaperItem) { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); if localURL.path == (UserDefaults.standard.string(forKey: "LastWallpaperPath") ?? "") { statusMessage = "⚠️ 正在使用的壁纸无法删除"; DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if self.statusMessage.contains("⚠️") { self.statusMessage = "" } }; return }; try? FileManager.default.removeItem(at: localURL); if let idx = playlistIds.firstIndex(of: item.id) { playlistIds.remove(at: idx) }; self.calculateCacheSize(); self.objectWillChange.send(); statusMessage = "🗑️ 已清除该壁纸缓存"; DispatchQueue.main.asyncAfter(deadline: .now() + 2) { if self.statusMessage.contains("🗑️") { self.statusMessage = "" } } }
     private func syncLockScreenWallpaper(for videoURL: URL) async { let generator = AVAssetImageGenerator(asset: AVURLAsset(url: videoURL)); generator.appliesPreferredTrackTransform = true; do { let (cgImage, _) = try await generator.image(at: CMTime(seconds: 1, preferredTimescale: 600)); if let jpegData = NSBitmapImageRep(cgImage: cgImage).representation(using: .jpeg, properties: [:]) { let lockScreenURL = WallpaperCacheManager.shared.cacheDirectory.appendingPathComponent("lockscreen_sync.jpg"); try jpegData.write(to: lockScreenURL); await MainActor.run { self.applyStaticWallpaper(url: lockScreenURL) } } } catch { } }
     func restoreLastWallpaper() { guard let path = UserDefaults.standard.string(forKey: "LastWallpaperPath") else { return }; let url = URL(fileURLWithPath: path); if FileManager.default.fileExists(atPath: url.path) { if url.pathExtension.lowercased() == "mp4" { DesktopVideoManager.shared.playVideoOnDesktop(url: url); Task { await syncLockScreenWallpaper(for: url) } } } }
@@ -190,5 +273,30 @@ class WallpaperViewModel: ObservableObject {
     func calculateCacheSize() { var totalSize: Int64 = 0; if let files = try? FileManager.default.contentsOfDirectory(at: WallpaperCacheManager.shared.cacheDirectory, includingPropertiesForKeys: [.fileSizeKey]) { for file in files { if let attrs = try? file.resourceValues(forKeys: [.fileSizeKey]), let size = attrs.fileSize { totalSize += Int64(size) } } }; DispatchQueue.main.async { self.cacheSizeString = String(format: "%.1f MB", Double(totalSize) / (1024 * 1024)) } }
     func clearCache() { let currentPath = UserDefaults.standard.string(forKey: "LastWallpaperPath") ?? ""; if let files = try? FileManager.default.contentsOfDirectory(at: WallpaperCacheManager.shared.cacheDirectory, includingPropertiesForKeys: nil) { for file in files { if file.path != currentPath && file.lastPathComponent != "lockscreen_sync.jpg" { try? FileManager.default.removeItem(at: file) } } }; playlistIds.removeAll(); calculateCacheSize(); self.objectWillChange.send(); statusMessage = "✅ 缓存清理完成"; DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if self.statusMessage == "✅ 缓存清理完成" { self.statusMessage = "" } } }
     private func downloadWithProgress(url: URL, itemId: String, isSilent: Bool = false) async throws -> URL { return try await withCheckedThrowingContinuation { continuation in let task = URLSession.shared.downloadTask(with: url) { tempURL, response, error in DispatchQueue.main.async { self.progressObservations.removeValue(forKey: itemId) }; if let error = error { continuation.resume(throwing: error); return }; guard let tempURL = tempURL else { continuation.resume(throwing: URLError(.badServerResponse)); return }; let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); try? FileManager.default.moveItem(at: tempURL, to: destination); continuation.resume(returning: destination) }; if !isSilent { self.progressObservations[itemId] = task.progress.observe(\.fractionCompleted) { progress, _ in DispatchQueue.main.async { self.downloadProgress[itemId] = progress.fractionCompleted } } }; task.resume() } }
-    private func applyStaticWallpaper(url: URL) { for screen in NSScreen.screens { try? NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:]) } }
+    private func applyStaticWallpaper(url: URL) {
+        let options = wallpaperFit.desktopImageOptions
+        let screens: [NSScreen]
+        if targetScreenName == "全部" {
+            screens = NSScreen.screens
+        } else {
+            let filtered = NSScreen.screens.filter { $0.localizedName == targetScreenName }
+            screens = filtered.isEmpty ? NSScreen.screens : filtered
+        }
+        for screen in screens { try? NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: options) }
+    }
+}
+
+extension WallpaperFit {
+    var desktopImageOptions: [NSWorkspace.DesktopImageOptionKey: Any] {
+        switch self {
+        case .fill:    return [.imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue, .allowClipping: true]
+        case .fit:     return [.imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue, .allowClipping: false]
+        case .stretch: return [.imageScaling: NSImageScaling.scaleAxesIndependently.rawValue,      .allowClipping: true]
+        case .center:  return [.imageScaling: NSImageScaling.scaleNone.rawValue,                   .allowClipping: false]
+        }
+    }
+}
+
+extension Notification.Name {
+    static let randomWallpaperTrigger = Notification.Name("com.panglou.wallpaper.random")
 }

@@ -19,7 +19,14 @@ enum AppTab: String {
     case upload = "上传壁纸" // 🌟 新增：独立的上传专属频道
 }
 
-// 🌟 新增：代表“待上传列表”里每一张图片的数据模型
+enum WallpaperFit: String, CaseIterable {
+    case fill   = "填充"
+    case fit    = "适应"
+    case stretch = "拉伸"
+    case center = "居中"
+}
+
+// 🌟 新增：代表"待上传列表"里每一张图片的数据模型
 struct PendingUploadItem: Identifiable {
     let id = UUID()
     let url: URL

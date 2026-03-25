@@ -35,6 +35,32 @@ struct ContentView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             }
             
+            if viewModel.showAbout {
+                Color.black.opacity(0.5).ignoresSafeArea()
+                    .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.showAbout = false } }
+                VStack {
+                    Spacer()
+                    AboutView(viewModel: viewModel)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    Spacer()
+                }
+                .zIndex(98)
+            }
+
+            if viewModel.previewItem != nil {
+                Color.black.opacity(0.55).ignoresSafeArea()
+                    .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil } }
+                VStack {
+                    Spacer()
+                    if let item = viewModel.previewItem {
+                        WallpaperPreviewView(item: item, viewModel: viewModel)
+                            .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    }
+                    Spacer()
+                }
+                .zIndex(99)
+            }
+
             if viewModel.editingWallpaper != nil {
                 Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { viewModel.cancelEdit() }
                 // 保证弹窗永远在屏幕正中间
