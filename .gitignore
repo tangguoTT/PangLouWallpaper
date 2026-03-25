@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+*.DS_Store
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Secrets (本地密钥文件，不提交到 git)
+Secrets.plist

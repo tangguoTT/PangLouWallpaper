@@ -10,10 +10,20 @@ import AppKit
 class OSSUploader {
     static let shared = OSSUploader()
     
-    // ⚠️ 请换回你自己的阿里云密钥！
-    private let accessKeyId = ""
-    private let accessKeySecret = ""
+    private let accessKeyId: String
+    private let accessKeySecret: String
     private let endpoint = "oss-cn-beijing.aliyuncs.com"
+
+    private init() {
+        guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+              let dict = NSDictionary(contentsOf: url) as? [String: String],
+              let keyId = dict["OSSAccessKeyId"],
+              let keySecret = dict["OSSAccessKeySecret"] else {
+            fatalError("Secrets.plist 未找到或格式错误，请参考 Secrets.plist.example 创建该文件")
+        }
+        self.accessKeyId = keyId
+        self.accessKeySecret = keySecret
+    }
     private let bucketName = "wallpapers-pl"
     private let remotePath = "wallpapers/"
     
