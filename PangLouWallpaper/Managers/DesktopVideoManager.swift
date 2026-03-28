@@ -16,32 +16,26 @@ class DesktopVideoManager: NSObject {
     private var videoPlayers: [AVPlayer] = []
     private var playerLooperObservers: [NSObjectProtocol] = []
 
-    // 🌟 新增核心代码：在初始化时，注册“系统唤醒”监听器
     override init() {
         super.init()
-        
-        // 监听系统通知：屏幕重新亮起时
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(wakeUpAndPlay),
-            name: NSWorkspace.screensDidWakeNotification,
-            object: nil
-        )
-        
-        // 监听系统通知：电脑从深度休眠中恢复时
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(wakeUpAndPlay),
-            name: NSWorkspace.didWakeNotification,
-            object: nil
-        )
+        let nc = NSWorkspace.shared.notificationCenter
+        // 屏幕亮起 / 电脑从深度休眠恢复 → 继续播放
+        nc.addObserver(self, selector: #selector(wakeUpAndPlay), name: NSWorkspace.screensDidWakeNotification, object: nil)
+        nc.addObserver(self, selector: #selector(wakeUpAndPlay), name: NSWorkspace.didWakeNotification, object: nil)
+        // 会话解锁（锁屏解开）→ 继续播放
+        nc.addObserver(self, selector: #selector(wakeUpAndPlay), name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        // 屏幕进入睡眠 → 暂停，节省性能
+        nc.addObserver(self, selector: #selector(pauseForSleep), name: NSWorkspace.screensDidSleepNotification, object: nil)
+        // 会话锁定（锁屏激活）→ 暂停，节省性能
+        nc.addObserver(self, selector: #selector(pauseForSleep), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
     }
-    
-    // 🌟 新增核心代码：当收到唤醒通知时，强制所有视频重新播放
+
     @objc private func wakeUpAndPlay() {
-        for player in videoPlayers {
-            player.play()
-        }
+        for player in videoPlayers { player.play() }
+    }
+
+    @objc private func pauseForSleep() {
+        for player in videoPlayers { player.pause() }
     }
 
     func clearVideoWallpaper() {

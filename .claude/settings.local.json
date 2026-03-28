@@ -6,7 +6,31 @@
       "Bash(pip install:*)",
       "Bash(python3 migrate_to_meilisearch.py --host https://ms-b2c54b2a57a8-44199.jpn.meilisearch.io --key 7efaef284bddf97b9f92ab75ff2f7d7d302e5038 --json https://wallpapers-pl.oss-cn-beijing.aliyuncs.com/wallpapers/wallpapers.json)",
       "Bash(pip3 install:*)",
-      "Bash(python3 /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper/migrate_to_meilisearch.py --host https://ms-b2c54b2a57a8-44199.jpn.meilisearch.io --key 7efaef284bddf97b9f92ab75ff2f7d7d302e5038 --json https://wallpapers-pl.oss-cn-beijing.aliyuncs.com/wallpapers/wallpapers.json)"
+      "Bash(python3 /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper/migrate_to_meilisearch.py --host https://ms-b2c54b2a57a8-44199.jpn.meilisearch.io --key 7efaef284bddf97b9f92ab75ff2f7d7d302e5038 --json https://wallpapers-pl.oss-cn-beijing.aliyuncs.com/wallpapers/wallpapers.json)",
+      "Bash(defaults read:*)",
+      "Bash(nm /System/Library/PrivateFrameworks/Wallpaper.framework/Wallpaper)",
+      "Bash(otool -ov /System/Library/PrivateFrameworks/Wallpaper.framework/Wallpaper)",
+      "Bash(plutil -p ~/Library/Application Support/com.apple.wallpaper/Store/Index.plist)",
+      "Bash(plutil -p ~/Library/Preferences/loginwindow.plist)",
+      "Bash(plutil -p /System/Library/LaunchAgents/com.apple.wallpaper.plist)",
+      "Bash(find /System/Library/PrivateFrameworks/WallpaperFoundation.framework -name *.swiftinterface)",
+      "Bash(nm /System/Library/PrivateFrameworks/Wallpaper.framework/Versions/A/Wallpaper)",
+      "Bash(nm /System/Library/PrivateFrameworks/WallpaperFoundation.framework/Versions/A/WallpaperFoundation)",
+      "Bash(nm /System/Library/CoreServices/WallpaperAgent.app/Contents/MacOS/WallpaperAgent)",
+      "Bash(otool -ov /System/Library/CoreServices/WallpaperAgent.app/Contents/MacOS/WallpaperAgent)",
+      "Bash(nm /System/Library/PrivateFrameworks/PreferencePanesSupport.framework/Versions/A/XPCServices/WallpaperHelper.xpc/Contents/MacOS/WallpaperHelper)",
+      "Bash(otool -L /System/Library/CoreServices/WallpaperAgent.app/Contents/MacOS/WallpaperAgent)",
+      "Bash(lipo:*)",
+      "Bash(xargs ls:*)",
+      "Bash(find /System/Library/PrivateFrameworks -name *.swiftinterface)",
+      "Bash(find /System/Library/PrivateFrameworks -name *.swiftmodule)",
+      "Bash(grep -r \"NSWorkspace\\\\|SystemConfiguration\\\\|XPC\" /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper --include=*.swift)",
+      "Bash(otool -L /System/Library/PrivateFrameworks/PreferencePanesSupport.framework/Versions/A/XPCServices/WallpaperHelper.xpc/Contents/MacOS/WallpaperHelper)",
+      "Bash(grep -i \"^_$s.*wallpaper.*\")",
+      "Bash(grep -E \"^_$s14Wallpaper\")",
+      "Bash(grep \"T _$s\")",
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|XXX\\\\|MARK\\\\|NOTE\" /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper --include=*.swift)",
+      "Bash(grep -r \"//.*[Ll]ock\\\\|//.*[Ff]ound\\\\|//.*[Pp]rivate\" /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper --include=*.swift)"
     ]
   }
 }

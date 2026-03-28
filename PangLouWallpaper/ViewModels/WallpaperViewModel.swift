@@ -603,6 +603,7 @@ class WallpaperViewModel: ObservableObject {
                     } else {
                         DesktopVideoManager.shared.clearVideoWallpaper()
                         self.applyStaticWallpaper(url: localURL)
+                        self.applyLockScreenWallpaper(url: localURL)
                     }
                     UserDefaults.standard.set(localURL.path, forKey: "LastWallpaperPath")
                     self.currentWallpaperPath = localURL.path
@@ -784,7 +785,10 @@ class WallpaperViewModel: ObservableObject {
                 let lockScreenURL = WallpaperCacheManager.shared.cacheDirectory
                     .appendingPathComponent("lockscreen_sync.jpg")
                 try jpegData.write(to: lockScreenURL)
-                await MainActor.run { self.applyStaticWallpaper(url: lockScreenURL) }
+                await MainActor.run {
+                    self.applyStaticWallpaper(url: lockScreenURL)
+                    self.applyLockScreenWallpaper(url: lockScreenURL)
+                }
             }
         } catch {}
     }
@@ -822,6 +826,20 @@ class WallpaperViewModel: ObservableObject {
         }
         for screen in screens {
             try? NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: options)
+        }
+    }
+
+    /// 同步锁屏壁纸（macOS Ventura+ 锁屏与桌面分离，需单独设置）
+    private func applyLockScreenWallpaper(url: URL) {
+        guard let prefs = UserDefaults(suiteName: "com.apple.wallpaper") else { return }
+        prefs.set(url.absoluteString, forKey: "SystemWallpaperURL")
+        prefs.synchronize()
+        // WallpaperAgent 只在启动时读取 SystemWallpaperURL，写入后需重启才生效
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 0.3) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+            p.arguments = ["WallpaperAgent"]
+            try? p.run()
         }
     }
 }
