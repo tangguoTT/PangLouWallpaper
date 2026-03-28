@@ -25,7 +25,9 @@ struct ContentView: View {
                         .padding(.top, 15)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     
-                    if viewModel.currentTab != .upload || viewModel.uploadMode == .manage {
+                    let hideBottomBar = (viewModel.currentTab == .upload && viewModel.uploadMode != .manage)
+                        || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
+                    if !hideBottomBar {
                         BottomFloatingBarView(viewModel: viewModel)
                             .padding(.top, 10)
                             .padding(.bottom, 25)
@@ -61,6 +63,18 @@ struct ContentView: View {
                 .zIndex(99)
             }
 
+            if viewModel.addToCollectionTargetItem != nil {
+                Color.black.opacity(0.5).ignoresSafeArea()
+                    .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.addToCollectionTargetItem = nil } }
+                VStack {
+                    Spacer()
+                    AddToCollectionView(viewModel: viewModel)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    Spacer()
+                }
+                .zIndex(99)
+            }
+
             if viewModel.editingWallpaper != nil {
                 Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { viewModel.cancelEdit() }
                 // 保证弹窗永远在屏幕正中间
@@ -72,6 +86,7 @@ struct ContentView: View {
                 }
                 .zIndex(100)
             }
+
         }
         .frame(minWidth: 1100, minHeight: 750)
         .preferredColorScheme(isDarkMode ? .dark : .light)

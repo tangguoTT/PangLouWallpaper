@@ -88,6 +88,19 @@ struct WallpaperCardView: View {
         return !viewModel.currentWallpaperPath.isEmpty && path == viewModel.currentWallpaperPath
     }
 
+    private var centerButtonText: String {
+        if viewModel.currentTab == .pc {
+            return isDownloaded
+                ? (item.isVideo ? "设为动态壁纸" : "设为壁纸")
+                : (item.isVideo ? "下载动态壁纸" : "下载壁纸")
+        }
+        return item.isVideo ? "设为动态壁纸" : "设为壁纸"
+    }
+
+    private var isInAnyCollection: Bool {
+        viewModel.isItemInAnyCollection(item)
+    }
+
     var body: some View {
         ZStack {
             AsyncThumbnailView(item: item).cornerRadius(12).clipped()
@@ -105,7 +118,7 @@ struct WallpaperCardView: View {
                         if viewModel.currentTab == .upload && viewModel.uploadMode == .manage {
                             withAnimation { viewModel.beginEdit(item: item) }
                         } else if viewModel.currentTab == .pc {
-                            viewModel.downloadWallpaper(item: item)
+                            if isDownloaded { viewModel.setWallpaper(item: item) } else { viewModel.downloadWallpaper(item: item) }
                         } else {
                             viewModel.setWallpaper(item: item)
                         }
@@ -122,17 +135,24 @@ struct WallpaperCardView: View {
                                 }.buttonStyle(.plain)
                                 VStack { Spacer(); HStack { Spacer(); Button(action: { viewModel.deleteFromCloud(item: item) }) { Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.red.opacity(0.8)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).padding(8) } }
                             } else {
-                                Button(action: { if viewModel.currentTab == .pc { viewModel.downloadWallpaper(item: item) } else { viewModel.setWallpaper(item: item) } }) {
-                                    let buttonText = viewModel.currentTab == .pc ? (item.isVideo ? "下载动态壁纸" : "下载壁纸") : (item.isVideo ? "设为动态壁纸" : "设为壁纸")
-                                    Text(buttonText).font(.system(size: 13, weight: .bold)).foregroundColor(colorScheme == .dark ? .white : .black).padding(.vertical, 8).padding(.horizontal, 20).background(.ultraThinMaterial).clipShape(Capsule()).overlay(Capsule().stroke(Color.primary.opacity(0.2), lineWidth: 1))
+                                Button(action: {
+                                    if viewModel.currentTab == .pc {
+                                        if isDownloaded { viewModel.setWallpaper(item: item) } else { viewModel.downloadWallpaper(item: item) }
+                                    } else { viewModel.setWallpaper(item: item) }
+                                }) {
+                                    Text(centerButtonText).font(.system(size: 13, weight: .bold)).foregroundColor(colorScheme == .dark ? .white : .black).padding(.vertical, 8).padding(.horizontal, 20).background(.ultraThinMaterial).clipShape(Capsule()).overlay(Capsule().stroke(Color.primary.opacity(0.2), lineWidth: 1))
                                 }.buttonStyle(.plain)
 
                                 // 收藏按钮（右上角，所有 tab 通用）
                                 VStack { HStack { Spacer(); Button(action: { viewModel.toggleFavorite(item: item) }) { Image(systemName: viewModel.favoriteIds.contains(item.id) ? "heart.fill" : "heart").font(.system(size: 13)).foregroundColor(viewModel.favoriteIds.contains(item.id) ? .pink : .white).padding(8).background(Color.black.opacity(0.5)).clipShape(Circle()) }.buttonStyle(.plain).padding(8) }; Spacer() }
 
-                                if viewModel.currentTab != .pc {
+                                if viewModel.currentTab != .pc && viewModel.currentTab != .collection {
                                     VStack { HStack { Button(action: { viewModel.toggleInPlaylist(item: item) }) { Image(systemName: viewModel.playlistIds.contains(item.id) ? "star.fill" : "star").font(.system(size: 13)).foregroundColor(viewModel.playlistIds.contains(item.id) ? .yellow : .white).padding(8).background(Color.black.opacity(0.5)).clipShape(Circle()) }.buttonStyle(.plain).padding(8); Spacer() }; Spacer() }
                                 }
+
+                                // 加入合集按钮（左下角）
+                                VStack { Spacer(); HStack { Button(action: { viewModel.addToCollectionTargetItem = item }) { Image(systemName: isInAnyCollection ? "bookmark.fill" : "bookmark").font(.system(size: 13)).foregroundColor(isInAnyCollection ? Color(hex: "#C6AC2C") : .white).padding(8).background(Color.black.opacity(0.5)).clipShape(Circle()) }.buttonStyle(.plain).padding(8); Spacer() } }
+
                                 if viewModel.currentTab == .downloaded { VStack { Spacer(); HStack { Spacer(); Button(action: { viewModel.deleteSingleCache(for: item) }) { Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.red.opacity(0.8)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).padding(8) } } }
                             }
                         }
@@ -151,21 +171,80 @@ struct WallpaperCardView: View {
 
 struct EditWallpaperPopupView: View {
     @ObservedObject var viewModel: WallpaperViewModel
-    let categories = ["全部", "魅力 | 迷人", "自制 | 艺术", "安逸 | 自由", "科幻 | 星云", "动漫 | 二次元", "自然 | 风景", "游戏 | 玩具"]; let resolutions = ["全部", "1 K", "2 K", "3 K", "4 K", "5 K", "6 K", "7 K"]; let colors = ["全部", "偏蓝", "偏绿", "偏红", "灰/白", "紫/粉", "暗色", "偏黄", "其他颜色"]
-    
+    private let categories  = ["全部", "魅力", "自制", "安逸", "科幻", "动漫", "自然", "游戏"]
+    private let resolutions = ["全部", "1 K", "2 K", "3 K", "4 K", "5 K", "6 K", "7 K"]
+    private let colors      = ["全部", "偏蓝", "偏绿", "偏红", "灰/白", "紫/粉", "暗色", "偏黄", "其他颜色"]
+
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             Text("修改壁纸属性").font(.system(size: 18, weight: .bold)).foregroundColor(.primary)
-            VStack(spacing: 16) {
-                HStack { Text("当前分类：").frame(width: 70, alignment: .trailing); Picker("", selection: $viewModel.editCategory) { ForEach(categories, id: \.self) { Text($0).tag($0) } }.frame(width: 160).labelsHidden() }
-                HStack { Text("分辨率：").frame(width: 70, alignment: .trailing); Picker("", selection: $viewModel.editResolution) { ForEach(resolutions, id: \.self) { Text($0).tag($0) } }.frame(width: 160).labelsHidden() }
-                HStack { Text("当前色系：").frame(width: 70, alignment: .trailing); Picker("", selection: $viewModel.editColor) { ForEach(colors, id: \.self) { Text($0).tag($0) } }.frame(width: 160).labelsHidden() }
-            }.font(.system(size: 14))
-            HStack(spacing: 20) {
-                Button(action: { withAnimation { viewModel.cancelEdit() } }) { Text("取消").fontWeight(.medium).padding(.horizontal, 24).padding(.vertical, 8).background(Color.primary.opacity(0.1)).cornerRadius(8) }.buttonStyle(.plain)
-                Button(action: { viewModel.saveWallpaperEdit() }) { Text("保存修改").fontWeight(.bold).padding(.horizontal, 24).padding(.vertical, 8).background(Color.accentColor).foregroundColor(.white).cornerRadius(8) }.buttonStyle(.plain)
+
+            VStack(spacing: 12) {
+                // 标题
+                HStack {
+                    Text("标题：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
+                    TextField("壁纸标题", text: $viewModel.editTitle)
+                        .textFieldStyle(.plain).font(.system(size: 13))
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(Color.primary.opacity(0.06)).cornerRadius(6)
+                        .frame(width: 280)
+                }
+                // 描述
+                HStack {
+                    Text("描述：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
+                    TextField("一句话描述（用于全文搜索）", text: $viewModel.editDescription)
+                        .textFieldStyle(.plain).font(.system(size: 13))
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(Color.primary.opacity(0.06)).cornerRadius(6)
+                        .frame(width: 280)
+                }
+                // 标签
+                HStack {
+                    Text("标签：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
+                    TextField("逗号分隔，如：动漫, 夜晚, 城市", text: $viewModel.editTags)
+                        .textFieldStyle(.plain).font(.system(size: 13))
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(Color.primary.opacity(0.06)).cornerRadius(6)
+                        .frame(width: 280)
+                }
+                Divider().padding(.vertical, 2)
+                // 分类 / 分辨率 / 色系
+                HStack {
+                    Text("分类：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
+                    Picker("", selection: $viewModel.editCategory) {
+                        ForEach(categories, id: \.self) { Text($0).tag($0) }
+                    }.frame(width: 120).labelsHidden()
+                }
+                HStack {
+                    Text("分辨率：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
+                    Picker("", selection: $viewModel.editResolution) {
+                        ForEach(resolutions, id: \.self) { Text($0).tag($0) }
+                    }.frame(width: 120).labelsHidden()
+                }
+                HStack {
+                    Text("色系：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
+                    Picker("", selection: $viewModel.editColor) {
+                        ForEach(colors, id: \.self) { Text($0).tag($0) }
+                    }.frame(width: 120).labelsHidden()
+                }
             }
-        }.padding(30).background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial).shadow(color: .black.opacity(0.2), radius: 20, y: 10))
+
+            HStack(spacing: 20) {
+                Button(action: { withAnimation { viewModel.cancelEdit() } }) {
+                    Text("取消").fontWeight(.medium)
+                        .padding(.horizontal, 24).padding(.vertical, 8)
+                        .background(Color.primary.opacity(0.1)).cornerRadius(8)
+                }.buttonStyle(.plain)
+                Button(action: { viewModel.saveWallpaperEdit() }) {
+                    Text("保存修改").fontWeight(.bold)
+                        .padding(.horizontal, 24).padding(.vertical, 8)
+                        .background(Color.accentColor).foregroundColor(.white).cornerRadius(8)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(30)
+        .frame(width: 420)
+        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial).shadow(color: .black.opacity(0.2), radius: 20, y: 10))
     }
 }
 
@@ -381,5 +460,119 @@ struct WallpaperPreviewView: View {
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
         .frame(width: 560)
+    }
+}
+
+// MARK: - 加入合集弹窗
+
+struct AddToCollectionView: View {
+    @ObservedObject var viewModel: WallpaperViewModel
+    @State private var isCreating = false
+    @State private var newName = ""
+
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack {
+                Text("加入合集").font(.system(size: 18, weight: .bold))
+                Spacer()
+                Button(action: { viewModel.addToCollectionTargetItem = nil }) {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundColor(.primary)
+                        .padding(8).background(Color.primary.opacity(0.1)).clipShape(Circle())
+                }.buttonStyle(.plain)
+            }
+
+            if viewModel.collections.isEmpty && !isCreating {
+                VStack(spacing: 12) {
+                    Image(systemName: "rectangle.stack.badge.plus").font(.system(size: 36)).foregroundColor(.primary.opacity(0.3))
+                    Text("还没有合集").font(.system(size: 14)).foregroundColor(.secondary)
+                    Button(action: { isCreating = true }) {
+                        HStack(spacing: 6) { Image(systemName: "plus.circle.fill"); Text("新建合集").fontWeight(.bold) }
+                            .font(.system(size: 13)).foregroundColor(.white)
+                            .padding(.vertical, 8).padding(.horizontal, 16)
+                            .background(Color.accentColor).clipShape(Capsule())
+                    }.buttonStyle(.plain)
+                }.padding(.vertical, 8)
+            } else {
+                // 合集列表
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 8) {
+                        ForEach(viewModel.collections) { collection in
+                            let itemId = viewModel.addToCollectionTargetItem?.id ?? ""
+                            let isIn = collection.wallpaperIds.contains(itemId)
+                            Button(action: {
+                                if !itemId.isEmpty {
+                                    viewModel.toggleWallpaperInCollection(itemId: itemId, collectionId: collection.id)
+                                }
+                            }) {
+                                HStack(spacing: 12) {
+                                    if let coverItem = viewModel.allWallpapers.first(where: { collection.wallpaperIds.contains($0.id) }) {
+                                        AsyncThumbnailView(item: coverItem).frame(width: 52, height: 32).cornerRadius(6).clipped()
+                                    } else {
+                                        RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.1)).frame(width: 52, height: 32)
+                                            .overlay(Image(systemName: "rectangle.stack").font(.system(size: 12)).foregroundColor(.secondary))
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(collection.name).font(.system(size: 14, weight: .medium)).foregroundColor(.primary).lineLimit(1)
+                                        Text("\(collection.wallpaperIds.count) 张").font(.system(size: 11)).foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: isIn ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(isIn ? .accentColor : Color.primary.opacity(0.3))
+                                        .font(.system(size: 20))
+                                }
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(Color.primary.opacity(0.05)).cornerRadius(10)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+
+                if !isCreating {
+                    Button(action: { isCreating = true }) {
+                        HStack(spacing: 6) { Image(systemName: "plus.circle"); Text("新建合集") }
+                            .font(.system(size: 13)).foregroundColor(.accentColor)
+                    }.buttonStyle(.plain)
+                }
+            }
+
+            if isCreating {
+                HStack(spacing: 8) {
+                    TextField("合集名称", text: $newName)
+                        .textFieldStyle(.plain).font(.system(size: 13))
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                        .background(Color.primary.opacity(0.06)).cornerRadius(6)
+                        .onSubmit { createAndAdd() }
+                    Button(action: createAndAdd) {
+                        Text("创建").fontWeight(.bold).foregroundColor(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(newName.isEmpty ? Color.secondary : Color.accentColor).cornerRadius(6)
+                    }.buttonStyle(.plain).disabled(newName.isEmpty)
+                    Button(action: { isCreating = false; newName = "" }) {
+                        Text("取消").font(.system(size: 13)).foregroundColor(.secondary)
+                    }.buttonStyle(.plain)
+                }
+            }
+
+            Button(action: { viewModel.addToCollectionTargetItem = nil }) {
+                Text("完成").fontWeight(.semibold)
+                    .padding(.horizontal, 32).padding(.vertical, 8)
+                    .background(Color.accentColor).foregroundColor(.white).cornerRadius(8)
+            }.buttonStyle(.plain)
+        }
+        .padding(24)
+        .frame(width: 360)
+        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial).shadow(color: .black.opacity(0.2), radius: 20, y: 10))
+    }
+
+    private func createAndAdd() {
+        guard !newName.isEmpty else { return }
+        viewModel.createCollection(name: newName)
+        if let item = viewModel.addToCollectionTargetItem,
+           let newCollection = viewModel.collections.last {
+            viewModel.toggleWallpaperInCollection(itemId: item.id, collectionId: newCollection.id)
+        }
+        newName = ""
+        isCreating = false
     }
 }

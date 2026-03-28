@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xcodebuild -scheme PangLouWallpaper -destination 'platform=macOS' build)"
+      "Bash(xcodebuild -scheme PangLouWallpaper -destination 'platform=macOS' build)",
+      "Bash(curl -s https://wallpapers-pl.oss-cn-beijing.aliyuncs.com/wallpapers/wallpapers.json)",
+      "Bash(pip install:*)",
+      "Bash(python3 migrate_to_meilisearch.py --host https://ms-b2c54b2a57a8-44199.jpn.meilisearch.io --key 7efaef284bddf97b9f92ab75ff2f7d7d302e5038 --json https://wallpapers-pl.oss-cn-beijing.aliyuncs.com/wallpapers/wallpapers.json)",
+      "Bash(pip3 install:*)",
+      "Bash(python3 /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper/migrate_to_meilisearch.py --host https://ms-b2c54b2a57a8-44199.jpn.meilisearch.io --key 7efaef284bddf97b9f92ab75ff2f7d7d302e5038 --json https://wallpapers-pl.oss-cn-beijing.aliyuncs.com/wallpapers/wallpapers.json)"
     ]
   }
 }
