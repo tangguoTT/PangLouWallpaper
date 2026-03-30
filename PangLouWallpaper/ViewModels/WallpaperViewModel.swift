@@ -98,6 +98,7 @@ class WallpaperViewModel: ObservableObject {
     var availableScreenNames: [String] { ["全部"] + NSScreen.screens.map { $0.localizedName } }
 
     @Published var pendingUploads: [PendingUploadItem] = []
+    @Published var uploadProgress: [UUID: Double] = [:]
 
     // MARK: - 合集
     @Published var collections: [WallpaperCollection] = []
@@ -114,6 +115,7 @@ class WallpaperViewModel: ObservableObject {
     @Published var editColor: String = ""
 
     @Published var downloadProgress: [String: Double] = [:]
+    @Published var failedDownloadIds: Set<String> = []
     private var progressObservations: [String: NSKeyValueObservation] = [:]
 
     private var slideshowTimer: Timer?
@@ -300,6 +302,17 @@ class WallpaperViewModel: ObservableObject {
 
     // MARK: - 随机换壁纸
 
+    // MARK: - 预览弹窗导航
+
+    /// 返回当前预览项在 paginatedImages 中的上一张和下一张
+    func adjacentPreviewItems() -> (prev: WallpaperItem?, next: WallpaperItem?) {
+        let items = paginatedImages
+        guard let current = previewItem,
+              let idx = items.firstIndex(where: { $0.id == current.id }) else { return (nil, nil) }
+        return (idx > 0 ? items[idx - 1] : nil,
+                idx < items.count - 1 ? items[idx + 1] : nil)
+    }
+
     func randomWallpaper() {
         let downloaded = allWallpapers.filter {
             FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: $0.fullURL).path)
@@ -399,11 +412,24 @@ class WallpaperViewModel: ObservableObject {
                         uploadedAt: Int(Date().timeIntervalSince1970)
                     )
 
+                    await MainActor.run { self.uploadProgress[pendingItem.id] = 0 }
                     let uploaded = try await OSSUploader.shared.uploadFile(
                         fileURL: pendingItem.url,
                         fileData: fileData,
-                        draft: draft
+                        draft: draft,
+                        onProgress: { p in
+                            Task { @MainActor in self.uploadProgress[pendingItem.id] = p }
+                        }
                     )
+                    await MainActor.run { self.uploadProgress.removeValue(forKey: pendingItem.id) }
+
+                    // 视频：截取首帧上传到 thumbnails/
+                    if isVideo {
+                        try? await OSSUploader.shared.uploadVideoThumbnail(
+                            videoURL: pendingItem.url,
+                            itemId: uploaded.id
+                        )
+                    }
 
                     try await MeilisearchService.shared.addDocuments([uploaded])
                     newItems.append(uploaded)
@@ -411,6 +437,7 @@ class WallpaperViewModel: ObservableObject {
                     await MainActor.run { self.removePendingUpload(id: pendingItem.id) }
 
                 } catch {
+                    await MainActor.run { self.uploadProgress.removeValue(forKey: pendingItem.id) }
                     print("❌ 上传失败: \(pendingItem.url.lastPathComponent), 错误: \(error)")
                 }
             }
@@ -535,6 +562,16 @@ class WallpaperViewModel: ObservableObject {
         collections.contains { $0.wallpaperIds.contains(item.id) }
     }
 
+    func setCoverWallpaper(for collectionId: String, wallpaperId: String) {
+        guard let index = collections.firstIndex(where: { $0.id == collectionId }) else { return }
+        collections[index].coverWallpaperId = wallpaperId
+        saveCollections()
+        statusMessage = "✅ 已设为合集封面"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if self.statusMessage.contains("封面") { self.statusMessage = "" }
+        }
+    }
+
     // MARK: - 删除
 
     func deleteFromCloud(item: WallpaperItem) {
@@ -545,15 +582,19 @@ class WallpaperViewModel: ObservableObject {
         Task {
             do {
                 try await MeilisearchService.shared.deleteDocument(id: item.id)
+                try await OSSUploader.shared.deleteObject(for: item)
+                if item.isVideo {
+                    try? await OSSUploader.shared.deleteThumbnail(itemId: item.id)
+                }
                 await MainActor.run {
                     self.allWallpapers = newWallpapers
-                    self.statusMessage = "🗑️ 已从云端数据库彻底移除"
+                    self.statusMessage = "🗑️ 已从云端彻底移除"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         if self.statusMessage.contains("移除") { self.statusMessage = "" }
                     }
                 }
             } catch {
-                await MainActor.run { self.statusMessage = "❌ 移除失败" }
+                await MainActor.run { self.statusMessage = "❌ 移除失败: \(error.localizedDescription)" }
             }
         }
     }
@@ -562,6 +603,7 @@ class WallpaperViewModel: ObservableObject {
 
     func downloadWallpaper(item: WallpaperItem) {
         if downloadProgress[item.id] != nil { return }
+        failedDownloadIds.remove(item.id)
         DispatchQueue.main.async { self.downloadProgress[item.id] = 0.01 }
         Task {
             do {
@@ -579,11 +621,16 @@ class WallpaperViewModel: ObservableObject {
                 if (error as? URLError)?.code != .cancelled {
                     await MainActor.run {
                         self.downloadProgress.removeValue(forKey: item.id)
-                        self.statusMessage = "❌ 下载失败"
+                        self.failedDownloadIds.insert(item.id)
                     }
                 }
             }
         }
+    }
+
+    func retryDownload(item: WallpaperItem) {
+        failedDownloadIds.remove(item.id)
+        downloadWallpaper(item: item)
     }
 
     func setWallpaper(item: WallpaperItem, isSilent: Bool = false) {
@@ -739,7 +786,7 @@ class WallpaperViewModel: ObservableObject {
             : "下次切换 \(m):\(String(format: "%02d", s))"
     }
 
-    private func playNextWallpaper() {
+    func playNextWallpaper() {
         guard !playlistIds.isEmpty else { return }
         if isSlideshowRandom {
             currentSlideshowIndex = Int.random(in: 0..<playlistIds.count)
@@ -749,6 +796,11 @@ class WallpaperViewModel: ObservableObject {
         if let item = allWallpapers.first(where: { $0.id == playlistIds[currentSlideshowIndex] }) {
             setWallpaper(item: item, isSilent: true)
         }
+    }
+
+    func triggerNextSlideshow() {
+        playNextWallpaper()
+        nextSlideshowDate = Date().addingTimeInterval(slideshowInterval)
     }
 
     // MARK: - 内部工具

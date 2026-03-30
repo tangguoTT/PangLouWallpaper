@@ -73,6 +73,7 @@ struct UploadManagerView: View {
                         ForEach($viewModel.pendingUploads) { $item in
                             PendingUploadRowView(
                                 item: $item,
+                                uploadProgress: viewModel.uploadProgress[item.id],
                                 categories: uploadCategories,
                                 resolutions: uploadResolutions,
                                 colors: uploadColors,
@@ -88,6 +89,7 @@ struct UploadManagerView: View {
 
 struct PendingUploadRowView: View {
     @Binding var item: PendingUploadItem
+    let uploadProgress: Double?
     let categories: [String]
     let resolutions: [String]
     let colors: [String]
@@ -147,6 +149,27 @@ struct PendingUploadRowView: View {
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Color.primary.opacity(0.05)).cornerRadius(6)
             }
+
+            // 上传进度条
+            if let progress = uploadProgress {
+                VStack(spacing: 4) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.primary.opacity(0.1)).frame(height: 6)
+                            Capsule().fill(Color.accentColor)
+                                .frame(width: geo.size.width * CGFloat(progress), height: 6)
+                                .animation(.linear(duration: 0.1), value: progress)
+                        }
+                    }.frame(height: 6)
+                    HStack {
+                        Text("上传中…").font(.system(size: 11)).foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(Int(progress * 100))%")
+                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                            .foregroundColor(.accentColor)
+                    }
+                }
+            }
         }
         .padding(12).background(Color.primary.opacity(0.05)).cornerRadius(12)
     }
@@ -189,7 +212,11 @@ struct WallpaperGridView: View {
             } else {
                 if viewModel.currentTab == .slideshow {
                     VStack(spacing: 10) {
-                        HStack(spacing: 20) { Toggle(isOn: $viewModel.isSlideshowEnabled) { Text("启用自动轮播").font(.system(size: 14, weight: .bold)) }.toggleStyle(.switch); HStack(spacing: 8) { Text("切换频率:").font(.system(size: 13, weight: .medium)).foregroundColor(.secondary); Picker("", selection: $viewModel.slideshowInterval) { Text("1 分钟").tag(60.0); Text("15 分钟").tag(900.0); Text("1 小时").tag(3600.0); Text("24 小时").tag(86400.0) }.labelsHidden().frame(width: 100) }; Toggle(isOn: $viewModel.isSlideshowRandom) { Text("随机播放").font(.system(size: 13, weight: .medium)) }.toggleStyle(.switch); Spacer(); Button(action: { viewModel.playlistIds.removeAll(); viewModel.statusMessage = "轮播列表已清空"; DispatchQueue.main.asyncAfter(deadline: .now() + 2) { viewModel.statusMessage = "" } }) { HStack { Image(systemName: "trash"); Text("清空列表 (\(viewModel.playlistIds.count)张)") }.font(.system(size: 13, weight: .medium)).foregroundColor(.red).padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.1)).clipShape(Capsule()) }.buttonStyle(.plain) }
+                        HStack(spacing: 20) { Toggle(isOn: $viewModel.isSlideshowEnabled) { Text("启用自动轮播").font(.system(size: 14, weight: .bold)) }.toggleStyle(.switch); HStack(spacing: 8) { Text("切换频率:").font(.system(size: 13, weight: .medium)).foregroundColor(.secondary); Picker("", selection: $viewModel.slideshowInterval) { Text("1 分钟").tag(60.0); Text("15 分钟").tag(900.0); Text("1 小时").tag(3600.0); Text("24 小时").tag(86400.0) }.labelsHidden().frame(width: 100) }; Toggle(isOn: $viewModel.isSlideshowRandom) { Text("随机播放").font(.system(size: 13, weight: .medium)) }.toggleStyle(.switch); Spacer()
+                            if viewModel.isSlideshowEnabled && !viewModel.playlistIds.isEmpty {
+                                Button(action: { viewModel.triggerNextSlideshow() }) { HStack(spacing: 4) { Image(systemName: "forward.fill"); Text("立即切换") }.font(.system(size: 13, weight: .medium)).foregroundColor(.accentColor).padding(.horizontal, 12).padding(.vertical, 6).background(Color.accentColor.opacity(0.1)).clipShape(Capsule()) }.buttonStyle(.plain)
+                            }
+                            Button(action: { viewModel.playlistIds.removeAll(); viewModel.statusMessage = "轮播列表已清空"; DispatchQueue.main.asyncAfter(deadline: .now() + 2) { viewModel.statusMessage = "" } }) { HStack { Image(systemName: "trash"); Text("清空列表 (\(viewModel.playlistIds.count)张)") }.font(.system(size: 13, weight: .medium)).foregroundColor(.red).padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.1)).clipShape(Capsule()) }.buttonStyle(.plain) }
                         if viewModel.isSlideshowEnabled && !viewModel.nextSlideshowCountdown.isEmpty { HStack { Image(systemName: "timer").font(.system(size: 12)).foregroundColor(.secondary); Text(viewModel.nextSlideshowCountdown).font(.system(size: 12, weight: .medium).monospacedDigit()).foregroundColor(.secondary); Spacer() } }
                     }.padding(.horizontal, 30).padding(.bottom, 15)
                 }
@@ -303,20 +330,51 @@ struct CollectionCardView: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @State private var isHovered = false
 
-    private var coverItem: WallpaperItem? {
-        guard !collection.coverWallpaperId.isEmpty else { return nil }
-        return viewModel.allWallpapers.first { $0.id == collection.coverWallpaperId }
-            ?? viewModel.allWallpapers.first { collection.wallpaperIds.contains($0.id) }
+    private var coverItems: [WallpaperItem] {
+        // coverWallpaperId 优先显示在左上角（第一格），其余按添加顺序填充
+        var orderedIds: [String] = []
+        if !collection.coverWallpaperId.isEmpty {
+            orderedIds.append(collection.coverWallpaperId)
+        }
+        for id in collection.wallpaperIds {
+            if !orderedIds.contains(id) { orderedIds.append(id) }
+            if orderedIds.count >= 4 { break }
+        }
+        return orderedIds.compactMap { id in viewModel.allWallpapers.first { $0.id == id } }
     }
 
     var body: some View {
         ZStack {
-            // 封面图
-            if let item = coverItem {
-                AsyncThumbnailView(item: item).cornerRadius(12).clipped()
-            } else {
+            // 封面：多图拼贴
+            let items = coverItems
+            if items.isEmpty {
                 RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.08))
                     .overlay(Image(systemName: "rectangle.stack").font(.system(size: 36)).foregroundColor(.primary.opacity(0.3)))
+            } else if items.count == 1 {
+                AsyncThumbnailView(item: items[0]).cornerRadius(12).clipped()
+            } else {
+                GeometryReader { geo in
+                    let w = geo.size.width; let h = geo.size.height
+                    let hw = (w - 1) / 2; let hh = (h - 1) / 2
+                    HStack(spacing: 1) {
+                        VStack(spacing: 1) {
+                            AsyncThumbnailView(item: items[0]).frame(width: hw, height: hh).clipped()
+                            if items.count > 2 {
+                                AsyncThumbnailView(item: items[2]).frame(width: hw, height: hh).clipped()
+                            } else {
+                                Color.primary.opacity(0.08).frame(width: hw, height: hh)
+                            }
+                        }
+                        VStack(spacing: 1) {
+                            AsyncThumbnailView(item: items[1]).frame(width: hw, height: hh).clipped()
+                            if items.count > 3 {
+                                AsyncThumbnailView(item: items[3]).frame(width: hw, height: hh).clipped()
+                            } else {
+                                Color.primary.opacity(0.08).frame(width: hw, height: hh)
+                            }
+                        }
+                    }
+                }.cornerRadius(12).clipped()
             }
 
             // 底部渐变信息栏

@@ -52,10 +52,8 @@ struct HoverVideoPlayerView: NSViewRepresentable {
 struct AsyncThumbnailView: View {
     let item: WallpaperItem
     @State private var thumbnail: NSImage?
-    
+
     var body: some View {
-        // 🌟 核心修复 2：彻底删掉强硬的 .aspectRatio
-        // 使用色块打底，图片通过 overlay 附着，溢出部分被直接 clipped() 切掉。绝对不撑大父级！
         Color.primary.opacity(0.05)
             .overlay(
                 Group {
@@ -63,6 +61,9 @@ struct AsyncThumbnailView: View {
                         Image(nsImage: img)
                             .resizable()
                             .scaledToFill()
+                    } else if item.isVideo {
+                        // 视频缩略图加载中/不存在时显示深色占位（卡片上已有播放图标）
+                        Color(white: 0.12)
                     } else {
                         ProgressView().controlSize(.small)
                     }
@@ -70,8 +71,10 @@ struct AsyncThumbnailView: View {
             )
             .clipped()
             .task(id: item.fullURL) {
+                // 图片 → Cloudflare Image Resizing URL
+                // 视频 → thumbnails/{id}.jpg（上传时已截帧存云端）
                 let thumbURL = item.fullURL.ossThumb(isVideo: item.isVideo)
-                if let img = await WallpaperCacheManager.shared.fetchImage(for: thumbURL) { self.thumbnail = img }
+                thumbnail = await WallpaperCacheManager.shared.fetchImage(for: thumbURL)
             }
     }
 }
@@ -104,11 +107,51 @@ struct WallpaperCardView: View {
     var body: some View {
         ZStack {
             AsyncThumbnailView(item: item).cornerRadius(12).clipped()
-            
+
+            // 底部渐变 + 标题条（悬停时淡出）
+            VStack {
+                Spacer()
+                LinearGradient(colors: [.clear, .black.opacity(0.72)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 52)
+                    .cornerRadius(12)
+            }
+            VStack {
+                Spacer()
+                HStack {
+                    Text(item.title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.92))
+                        .lineLimit(1)
+                    Spacer()
+                }.padding(.horizontal, 10).padding(.bottom, 8)
+            }
+            // 整体随悬停淡出
+            .opacity(isHovered ? 0 : 1)
+            .animation(.easeInOut(duration: 0.18), value: isHovered)
+
+            // 分辨率角标（右上角，仅图片且有分辨率信息时显示）
+            if !item.isVideo && !item.resolution.isEmpty && item.resolution != "全部" {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Text(item.resolution)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(Color.black.opacity(0.48))
+                            .cornerRadius(4)
+                            .padding([.top, .trailing], 8)
+                    }
+                    Spacer()
+                }
+                .opacity(isHovered ? 0 : 1)
+                .animation(.easeInOut(duration: 0.18), value: isHovered)
+            }
+
             if viewModel.currentTab == .pc && isDownloaded && !isHovered { VStack { Spacer(); HStack { Spacer(); Image(systemName: "checkmark.icloud.fill").font(.system(size: 14)).foregroundColor(Color(hex: "#449B3E")).padding(6).background(.ultraThinMaterial).clipShape(Circle()).padding(8).shadow(color: .black.opacity(0.2), radius: 3) } } }
             if isCurrentWallpaper && !isHovered { VStack { HStack { Text("使用中").font(.system(size: 10, weight: .bold)).foregroundColor(.white).padding(.horizontal, 8).padding(.vertical, 3).background(Color.accentColor).clipShape(Capsule()).padding(8); Spacer() }; Spacer() } }
             if isHovered && item.isVideo { HoverVideoPlayerView(item: item).cornerRadius(12).clipped().transition(.opacity) }
-            if item.isVideo { VStack { HStack { Spacer(); Image(systemName: "play.circle.fill").font(.system(size: 24)).foregroundColor(.white.opacity(0.9)).padding(10).opacity(isHovered ? 0 : 1).animation(.easeInOut, value: isHovered) }; Spacer() } }
             
             let isDownloading = viewModel.downloadProgress[item.id] != nil
             
@@ -153,6 +196,11 @@ struct WallpaperCardView: View {
                                 // 加入合集按钮（左下角）
                                 VStack { Spacer(); HStack { Button(action: { viewModel.addToCollectionTargetItem = item }) { Image(systemName: isInAnyCollection ? "bookmark.fill" : "bookmark").font(.system(size: 13)).foregroundColor(isInAnyCollection ? Color(hex: "#C6AC2C") : .white).padding(8).background(Color.black.opacity(0.5)).clipShape(Circle()) }.buttonStyle(.plain).padding(8); Spacer() } }
 
+                                // 设为封面按钮（右下角，仅合集详情页）
+                                if viewModel.currentTab == .collection, let colId = viewModel.selectedCollectionId {
+                                    VStack { Spacer(); HStack { Spacer(); Button(action: { viewModel.setCoverWallpaper(for: colId, wallpaperId: item.id) }) { Image(systemName: "photo.badge.checkmark").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.accentColor.opacity(0.85)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).help("设为合集封面").padding(8) } }
+                                }
+
                                 if viewModel.currentTab == .downloaded { VStack { Spacer(); HStack { Spacer(); Button(action: { viewModel.deleteSingleCache(for: item) }) { Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.red.opacity(0.8)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).padding(8) } } }
                             }
                         }
@@ -161,6 +209,21 @@ struct WallpaperCardView: View {
             
             if let progress = viewModel.downloadProgress[item.id] {
                 ZStack { Color.black.opacity(0.6).cornerRadius(12); Circle().stroke(Color.white.opacity(0.2), lineWidth: 4).frame(width: 44, height: 44); Circle().trim(from: 0, to: CGFloat(progress)).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round)).frame(width: 44, height: 44).rotationEffect(.degrees(-90)).animation(.linear(duration: 0.1), value: progress); Text("\(Int(progress * 100))%").font(.system(size: 11, weight: .bold).monospacedDigit()).foregroundColor(.white) }.transition(.opacity).zIndex(10)
+            }
+
+            if viewModel.failedDownloadIds.contains(item.id) {
+                ZStack {
+                    Color.black.opacity(0.65).cornerRadius(12)
+                    VStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.icloud.fill").font(.system(size: 22)).foregroundColor(.red)
+                        Text("下载失败").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                        Button(action: { viewModel.retryDownload(item: item) }) {
+                            Text("重试").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                                .padding(.horizontal, 16).padding(.vertical, 5)
+                                .background(Color.accentColor).clipShape(Capsule())
+                        }.buttonStyle(.plain)
+                    }
+                }.transition(.opacity).zIndex(11)
             }
         }
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(isCurrentWallpaper ? Color.accentColor : Color.primary.opacity(0.05), lineWidth: isCurrentWallpaper ? 2 : 1)).shadow(color: Color.primary.opacity(isHovered ? 0.2 : 0.05), radius: isHovered ? 10 : 4, y: isHovered ? 5 : 2).scaleEffect(isHovered ? 1.02 : 1.0).animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered).onHover { isHovered = $0 }
@@ -349,15 +412,56 @@ struct WallpaperPreviewView: View {
         return tags
     }
 
+    @State private var keyMonitor: Any?
+
+    private var prevItem: WallpaperItem? { viewModel.adjacentPreviewItems().prev }
+    private var nextItem: WallpaperItem? { viewModel.adjacentPreviewItems().next }
+
+    private func navigate(to target: WallpaperItem?) {
+        guard let target else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = target }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // 预览图/视频区域
             ZStack {
                 Color.black
                 if item.isVideo {
-                    HoverVideoPlayerView(item: item)
+                    HoverVideoPlayerView(item: item).id(item.id)
                 } else {
                     AsyncThumbnailView(item: item)
+                }
+
+                // 左右导航箭头
+                HStack {
+                    if let prev = prevItem {
+                        Button(action: { navigate(to: prev) }) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Circle())
+                        }.buttonStyle(.plain)
+                            .padding(.leading, 12)
+                    } else {
+                        Spacer().frame(width: 60)
+                    }
+                    Spacer()
+                    if let next = nextItem {
+                        Button(action: { navigate(to: next) }) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Circle())
+                        }.buttonStyle(.plain)
+                            .padding(.trailing, 12)
+                    } else {
+                        Spacer().frame(width: 60)
+                    }
                 }
 
                 // 下载进度遮罩
@@ -460,6 +564,38 @@ struct WallpaperPreviewView: View {
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
         .frame(width: 560)
+        .onAppear {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                switch event.keyCode {
+                case 123: // ← 左箭头
+                    let prev = viewModel.adjacentPreviewItems().prev
+                    if let prev {
+                        DispatchQueue.main.async {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = prev }
+                        }
+                    }
+                    return nil
+                case 124: // → 右箭头
+                    let next = viewModel.adjacentPreviewItems().next
+                    if let next {
+                        DispatchQueue.main.async {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = next }
+                        }
+                    }
+                    return nil
+                case 53: // Esc 关闭预览
+                    DispatchQueue.main.async {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil }
+                    }
+                    return nil
+                default:
+                    return event
+                }
+            }
+        }
+        .onDisappear {
+            if let monitor = keyMonitor { NSEvent.removeMonitor(monitor); keyMonitor = nil }
+        }
     }
 }
 

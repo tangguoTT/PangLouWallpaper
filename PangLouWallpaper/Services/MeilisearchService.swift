@@ -89,15 +89,23 @@ class MeilisearchService {
         try checkHTTP(response, data: respData)
     }
 
-    /// 获取索引中全部文档（用于本地标签页过滤）
-    func getAllDocuments(limit: Int = 1000) async throws -> [WallpaperItem] {
-        let request = makeRawRequest(method: "GET", path: "/indexes/\(indexName)/documents?limit=\(limit)&offset=0")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try checkHTTP(response, data: data)
-
+    /// 获取索引中全部文档（分页循环直到取完）
+    func getAllDocuments() async throws -> [WallpaperItem] {
         struct GetDocsResponse: Codable { let results: [WallpaperItem]; let total: Int }
-        let decoded = try JSONDecoder().decode(GetDocsResponse.self, from: data)
-        return decoded.results
+        var all: [WallpaperItem] = []
+        let pageSize = 1000
+        var offset = 0
+        while true {
+            let request = makeRawRequest(method: "GET",
+                path: "/indexes/\(indexName)/documents?limit=\(pageSize)&offset=\(offset)")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try checkHTTP(response, data: data)
+            let decoded = try JSONDecoder().decode(GetDocsResponse.self, from: data)
+            all.append(contentsOf: decoded.results)
+            offset += decoded.results.count
+            if offset >= decoded.total || decoded.results.isEmpty { break }
+        }
+        return all
     }
 
     // MARK: - Index Settings（首次迁移时调用一次）

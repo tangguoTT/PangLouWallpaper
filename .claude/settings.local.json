@@ -30,7 +30,9 @@
       "Bash(grep -E \"^_$s14Wallpaper\")",
       "Bash(grep \"T _$s\")",
       "Bash(grep -r \"TODO\\\\|FIXME\\\\|XXX\\\\|MARK\\\\|NOTE\" /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper --include=*.swift)",
-      "Bash(grep -r \"//.*[Ll]ock\\\\|//.*[Ff]ound\\\\|//.*[Pp]rivate\" /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper --include=*.swift)"
+      "Bash(grep -r \"//.*[Ll]ock\\\\|//.*[Ff]ound\\\\|//.*[Pp]rivate\" /Users/tangxiao/Desktop/ProgramingTest/MacApp/SimpleWallpaper --include=*.swift)",
+      "WebFetch(domain:haowallpaper.com)",
+      "WebSearch"
     ]
   }
 }
