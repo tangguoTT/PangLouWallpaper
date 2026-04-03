@@ -16,11 +16,13 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
     let isVideo: Bool
     let fullURL: URL
     let uploadedAt: Int
+    let uploadedBy: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title, isVideo, fullURL
         case wallpaperDescription = "description"
         case tags, category, resolution, color, uploadedAt
+        case uploadedBy = "uploaded_by"
     }
 
     init(
@@ -33,7 +35,8 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
         color: String = "",
         isVideo: Bool,
         fullURL: URL,
-        uploadedAt: Int = 0
+        uploadedAt: Int = 0,
+        uploadedBy: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -45,6 +48,7 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
         self.isVideo = isVideo
         self.fullURL = fullURL
         self.uploadedAt = uploadedAt
+        self.uploadedBy = uploadedBy
     }
 
     // 兼容旧格式 JSON（缺失字段给默认值）
@@ -60,6 +64,20 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
         resolution = (try? c.decodeIfPresent(String.self, forKey: .resolution)) ?? ""
         color = (try? c.decodeIfPresent(String.self, forKey: .color)) ?? ""
         uploadedAt = (try? c.decodeIfPresent(Int.self, forKey: .uploadedAt)) ?? 0
+        uploadedBy = (try? c.decodeIfPresent(String.self, forKey: .uploadedBy)) ?? nil
+    }
+}
+
+// MARK: - User Profile
+
+struct UserProfile: Codable {
+    let id: String
+    var username: String
+    var avatarURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, username
+        case avatarURL = "avatar_url"
     }
 }
 
@@ -85,6 +103,11 @@ struct WallpaperCollection: Identifiable, Codable {
         self.coverWallpaperId = wallpaperIds.first ?? ""
         self.createdAt = Int(Date().timeIntervalSince1970)
     }
+}
+
+enum DownloadedSubTab {
+    case local         // 已下载到本地缓存
+    case localImports  // 本地导入
 }
 
 enum WallpaperFit: String, CaseIterable {

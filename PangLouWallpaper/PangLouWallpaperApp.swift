@@ -21,6 +21,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 确保程序刚启动时，主界面能立刻跳到所有窗口的最前面
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "panglouwallpaper" {
+            Task { await AuthService.shared.handleAuthCallback(url: url) }
+        }
+    }
 }
 
 // -----------------------------------------------------------

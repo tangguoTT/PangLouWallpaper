@@ -95,6 +95,55 @@ class WallpaperViewModel: ObservableObject {
     }
     @Published var showAbout: Bool = false
 
+    // MARK: - 登录状态
+    @Published var currentUser: AuthUser? = nil
+    @Published var showLoginSheet: Bool = false
+    var isLoggedIn: Bool { currentUser != nil }
+
+    // MARK: - 开发者标识（从 Secrets.plist 读取）
+    let developerUserId: String = {
+        guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+              let dict = NSDictionary(contentsOf: url) as? [String: String]
+        else { return "" }
+        return dict["DeveloperUserId"] ?? ""
+    }()
+
+    var isDeveloper: Bool {
+        guard !developerUserId.isEmpty, let uid = currentUser?.id else { return false }
+        return uid == developerUserId
+    }
+
+    // MARK: - 用户空间
+    @Published var currentProfile: UserProfile? = nil {
+        didSet { persistProfile() }
+    }
+
+    private func persistProfile() {
+        if let profile = currentProfile, let data = try? JSONEncoder().encode(profile) {
+            UserDefaults.standard.set(data, forKey: "cachedUserProfile")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "cachedUserProfile")
+        }
+    }
+
+    private func loadPersistedProfile() -> UserProfile? {
+        guard let data = UserDefaults.standard.data(forKey: "cachedUserProfile"),
+              let profile = try? JSONDecoder().decode(UserProfile.self, from: data)
+        else { return nil }
+        return profile
+    }
+    @Published var showUserSpace: Bool = false {
+        didSet { if !showUserSpace { showEditProfile = false; showChangePassword = false } }
+    }
+    @Published var showEditProfile: Bool = false
+    @Published var showChangePassword: Bool = false
+    @Published var localImports: [WallpaperItem] = []
+    @Published var userUploads: [WallpaperItem] = []
+    @Published var isLoadingUserUploads: Bool = false
+
+    // MARK: - 已下载 tab 子分类
+    @Published var downloadedSubTab: DownloadedSubTab = .local
+
     var availableScreenNames: [String] { ["全部"] + NSScreen.screens.map { $0.localizedName } }
 
     @Published var pendingUploads: [PendingUploadItem] = []
@@ -137,6 +186,7 @@ class WallpaperViewModel: ObservableObject {
             return searchResults
 
         case .downloaded:
+            if downloadedSubTab == .localImports { return localImports }
             let base = allWallpapers.filter {
                 FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: $0.fullURL).path)
             }
@@ -155,7 +205,8 @@ class WallpaperViewModel: ObservableObject {
             return applyLocalFilters(to: allWallpapers.filter { collection.wallpaperIds.contains($0.id) })
 
         case .upload:
-            return allWallpapers
+            // 开发者看全部；普通用户的管理模式只看自己的上传
+            return isDeveloper ? allWallpapers : userUploads
         }
     }
 
@@ -222,6 +273,20 @@ class WallpaperViewModel: ObservableObject {
         setupSlideshowTimer()
         self.currentWallpaperPath = UserDefaults.standard.string(forKey: "LastWallpaperPath") ?? ""
         loadCollections()
+        loadLocalImports()
+
+        // 恢复登录会话，若已登录则同步云端合集
+        self.currentUser = AuthService.shared.currentUser
+        if self.currentUser != nil {
+            self.currentProfile = loadPersistedProfile()
+        }
+        if self.currentUser != nil {
+            Task {
+                await syncCollectionsFromCloud()
+                await fetchUserProfile()
+                await fetchUserUploads()
+            }
+        }
 
         // 搜索文本防抖 300ms
         $searchText
@@ -239,6 +304,19 @@ class WallpaperViewModel: ObservableObject {
 
         NotificationCenter.default.publisher(for: .randomWallpaperTrigger)
             .sink { [weak self] _ in self?.randomWallpaper() }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .authCallbackCompleted)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.currentUser = AuthService.shared.currentUser
+                Task {
+                    await self.syncCollectionsFromCloud()
+                    await self.fetchUserProfile()
+                    await self.fetchUserUploads()
+                }
+            }
             .store(in: &cancellables)
     }
 
@@ -262,6 +340,11 @@ class WallpaperViewModel: ObservableObject {
                 }
                 if selectedColor != "全部" {
                     filters.append("color = \"\(selectedColor)\"")
+                }
+
+                // 电脑壁纸只展示开发者或无 uploadedBy 的公共壁纸
+                if !developerUserId.isEmpty {
+                    filters.append("(uploaded_by = \"\(developerUserId)\" OR uploaded_by NOT EXISTS)")
                 }
 
                 let response = try await MeilisearchService.shared.search(
@@ -290,6 +373,8 @@ class WallpaperViewModel: ObservableObject {
 
     func fetchCloudData() {
         Task {
+            // 确保 uploaded_by 已加入过滤字段（幂等）
+            try? await MeilisearchService.shared.configureIndex()
             do {
                 let items = try await MeilisearchService.shared.getAllDocuments()
                 await MainActor.run { self.allWallpapers = items }
@@ -327,22 +412,70 @@ class WallpaperViewModel: ObservableObject {
     func importLocalWallpaper() {
         let panel = NSOpenPanel()
         panel.title = "选择本地壁纸"
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.image, .movie]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let isVideo = ["mp4", "mov", "m4v", "avi"].contains(url.pathExtension.lowercased())
-        if isVideo {
-            DesktopVideoManager.shared.playVideoOnDesktop(url: url, screenName: targetScreenName)
-            Task { await syncLockScreenWallpaper(for: url) }
-        } else {
-            applyStaticWallpaper(url: url)
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        var added = 0
+        for url in panel.urls {
+            if addLocalImport(from: url) { added += 1 }
         }
-        UserDefaults.standard.set(url.path, forKey: "LastWallpaperPath")
-        currentWallpaperPath = url.path
-        statusMessage = "✅ 已应用本地壁纸"
+        guard added > 0 else { return }
+        statusMessage = "✅ 已导入 \(added) 张壁纸，可在个人中心查看"
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            if self.statusMessage == "✅ 已应用本地壁纸" { self.statusMessage = "" }
+            if self.statusMessage.hasPrefix("✅ 已导入") { self.statusMessage = "" }
+        }
+    }
+
+    /// 将文件复制到 local_imports 目录并追加到 localImports 列表，返回是否新增
+    @discardableResult
+    private func addLocalImport(from url: URL) -> Bool {
+        guard let data = try? Data(contentsOf: url) else { return false }
+        let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        guard !localImports.contains(where: { $0.id == hash }) else { return false }
+        let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+        let isVideo = ["mp4", "mov", "m4v", "avi"].contains(ext.lowercased())
+        let destURL = localImportsDirectory.appendingPathComponent("\(hash).\(ext)")
+        if !FileManager.default.fileExists(atPath: destURL.path) {
+            try? FileManager.default.copyItem(at: url, to: destURL)
+        }
+        let item = WallpaperItem(
+            id: hash,
+            title: url.deletingPathExtension().lastPathComponent,
+            isVideo: isVideo,
+            fullURL: destURL,
+            uploadedAt: Int(Date().timeIntervalSince1970)
+        )
+        localImports.insert(item, at: 0)
+        saveLocalImports()
+        return true
+    }
+
+    func deleteLocalImport(_ item: WallpaperItem) {
+        if item.fullURL.isFileURL {
+            try? FileManager.default.removeItem(at: item.fullURL)
+        }
+        localImports.removeAll { $0.id == item.id }
+        saveLocalImports()
+    }
+
+    private var localImportsDirectory: URL {
+        let dir = WallpaperCacheManager.shared.cacheDirectory.appendingPathComponent("local_imports")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func loadLocalImports() {
+        guard let data = UserDefaults.standard.data(forKey: "localImports"),
+              let items = try? JSONDecoder().decode([WallpaperItem].self, from: data)
+        else { return }
+        // 过滤掉文件已被删除的条目
+        localImports = items.filter { FileManager.default.fileExists(atPath: $0.fullURL.path) }
+    }
+
+    private func saveLocalImports() {
+        if let data = try? JSONEncoder().encode(localImports) {
+            UserDefaults.standard.set(data, forKey: "localImports")
         }
     }
 
@@ -409,7 +542,8 @@ class WallpaperViewModel: ObservableObject {
                         color: color,
                         isVideo: isVideo,
                         fullURL: URL(string: "placeholder://")!,   // 上传后替换
-                        uploadedAt: Int(Date().timeIntervalSince1970)
+                        uploadedAt: Int(Date().timeIntervalSince1970),
+                        uploadedBy: currentUser?.id
                     )
 
                     await MainActor.run { self.uploadProgress[pendingItem.id] = 0 }
@@ -445,6 +579,10 @@ class WallpaperViewModel: ObservableObject {
             await MainActor.run {
                 if successCount > 0 {
                     self.allWallpapers = newItems + self.allWallpapers
+                    // 普通用户上传后同步更新个人上传列表
+                    if !self.isDeveloper {
+                        self.userUploads = newItems + self.userUploads
+                    }
                     self.statusMessage = "✅ 成功上传 \(successCount) 个素材（跳过重复 \(skipCount) 个）"
                 } else {
                     self.statusMessage = skipCount > 0
@@ -532,6 +670,7 @@ class WallpaperViewModel: ObservableObject {
         let collection = WallpaperCollection(name: name)
         collections.append(collection)
         saveCollections()
+        if isLoggedIn { Task { try? await AuthService.shared.upsertCollection(collection) } }
         statusMessage = "✅ 合集「\(name)」已创建"
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if self.statusMessage.contains("合集") { self.statusMessage = "" }
@@ -542,6 +681,7 @@ class WallpaperViewModel: ObservableObject {
         collections.removeAll { $0.id == id }
         if selectedCollectionId == id { selectedCollectionId = nil }
         saveCollections()
+        if isLoggedIn { Task { try? await AuthService.shared.deleteCloudCollection(id: id) } }
     }
 
     func toggleWallpaperInCollection(itemId: String, collectionId: String) {
@@ -556,6 +696,9 @@ class WallpaperViewModel: ObservableObject {
             }
         }
         saveCollections()
+        if isLoggedIn, let collection = collections.first(where: { $0.id == collectionId }) {
+            Task { try? await AuthService.shared.upsertCollection(collection) }
+        }
     }
 
     func isItemInAnyCollection(_ item: WallpaperItem) -> Bool {
@@ -566,10 +709,90 @@ class WallpaperViewModel: ObservableObject {
         guard let index = collections.firstIndex(where: { $0.id == collectionId }) else { return }
         collections[index].coverWallpaperId = wallpaperId
         saveCollections()
+        if isLoggedIn, let collection = collections.first(where: { $0.id == collectionId }) {
+            Task { try? await AuthService.shared.upsertCollection(collection) }
+        }
         statusMessage = "✅ 已设为合集封面"
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if self.statusMessage.contains("封面") { self.statusMessage = "" }
         }
+    }
+
+    // MARK: - 登录 / 登出 / 云同步
+
+    func logout() {
+        Task {
+            await AuthService.shared.signOut()
+            await MainActor.run {
+                self.currentUser = nil
+                self.currentProfile = nil
+            }
+        }
+    }
+
+    func syncCollectionsFromCloud() async {
+        guard let user = currentUser else { return }
+        do {
+            let cloudCollections = try await AuthService.shared.fetchCollections(userId: user.id)
+            await MainActor.run {
+                self.collections = cloudCollections
+                self.saveCollections()
+            }
+        } catch { }
+    }
+
+    // MARK: - 用户空间
+
+    func fetchUserProfile() async {
+        guard let user = currentUser else { return }
+        do {
+            let profile = try await AuthService.shared.fetchProfile(userId: user.id)
+            await MainActor.run {
+                self.currentProfile = profile ?? UserProfile(id: user.id, username: "", avatarURL: "")
+            }
+        } catch { }
+    }
+
+    func saveProfile(username: String, avatarImageData: Data?) async {
+        guard let user = currentUser else { return }
+        do {
+            var avatarURL = currentProfile?.avatarURL ?? ""
+            if let data = avatarImageData {
+                avatarURL = try await OSSUploader.shared.uploadAvatar(userId: user.id, imageData: data)
+            }
+            let profile = UserProfile(id: user.id, username: username, avatarURL: avatarURL)
+            try await AuthService.shared.upsertProfile(profile)
+            await MainActor.run {
+                self.currentProfile = profile
+                self.statusMessage = "✅ 资料已更新"
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                if self.statusMessage == "✅ 资料已更新" { self.statusMessage = "" }
+            }
+        } catch {
+            await MainActor.run { self.statusMessage = "❌ 保存失败：\(error.localizedDescription)" }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                if self.statusMessage.hasPrefix("❌") { self.statusMessage = "" }
+            }
+        }
+    }
+
+    func fetchUserUploads() async {
+        guard let user = currentUser else { return }
+        await MainActor.run { isLoadingUserUploads = true }
+        do {
+            let uploads = try await MeilisearchService.shared.getUserUploads(userId: user.id)
+            await MainActor.run {
+                self.userUploads = uploads
+                self.isLoadingUserUploads = false
+            }
+        } catch {
+            await MainActor.run { isLoadingUserUploads = false }
+        }
+    }
+
+    func changePassword(newPassword: String) async throws {
+        try await AuthService.shared.changePassword(newPassword: newPassword)
     }
 
     // MARK: - 删除
@@ -588,6 +811,7 @@ class WallpaperViewModel: ObservableObject {
                 }
                 await MainActor.run {
                     self.allWallpapers = newWallpapers
+                    self.userUploads.removeAll { $0.id == item.id }
                     self.statusMessage = "🗑️ 已从云端彻底移除"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         if self.statusMessage.contains("移除") { self.statusMessage = "" }
@@ -638,10 +862,17 @@ class WallpaperViewModel: ObservableObject {
         if !isSilent { DispatchQueue.main.async { self.downloadProgress[item.id] = 0.01 } }
         Task {
             do {
-                let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
-                if !FileManager.default.fileExists(atPath: localURL.path) {
-                    let tempURL = try await downloadWithProgress(url: item.fullURL, itemId: item.id, isSilent: isSilent)
-                    try FileManager.default.moveItem(at: tempURL, to: localURL)
+                // 本地导入的壁纸直接使用文件路径，无需缓存
+                let localURL: URL
+                if item.fullURL.isFileURL && FileManager.default.fileExists(atPath: item.fullURL.path) {
+                    localURL = item.fullURL
+                } else {
+                    let cachedURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
+                    if !FileManager.default.fileExists(atPath: cachedURL.path) {
+                        let tempURL = try await downloadWithProgress(url: item.fullURL, itemId: item.id, isSilent: isSilent)
+                        try FileManager.default.moveItem(at: tempURL, to: cachedURL)
+                    }
+                    localURL = cachedURL
                 }
                 await MainActor.run {
                     self.downloadProgress.removeValue(forKey: item.id)

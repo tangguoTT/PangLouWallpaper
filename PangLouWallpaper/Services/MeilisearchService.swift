@@ -89,6 +89,17 @@ class MeilisearchService {
         try checkHTTP(response, data: respData)
     }
 
+    /// 查询指定用户上传的壁纸
+    func getUserUploads(userId: String) async throws -> [WallpaperItem] {
+        let response = try await search(
+            query: "",
+            filters: ["uploaded_by = \"\(userId)\""],
+            page: 0,
+            hitsPerPage: 200
+        )
+        return response.hits
+    }
+
     /// 获取索引中全部文档（分页循环直到取完）
     func getAllDocuments() async throws -> [WallpaperItem] {
         struct GetDocsResponse: Codable { let results: [WallpaperItem]; let total: Int }
@@ -113,12 +124,12 @@ class MeilisearchService {
     func configureIndex() async throws {
         let settings: [String: Any] = [
             "searchableAttributes": ["title", "description", "tags"],
-            "filterableAttributes": ["category", "resolution", "color", "isVideo"],
+            "filterableAttributes": ["category", "resolution", "color", "isVideo", "uploaded_by"],
             "sortableAttributes": ["uploadedAt"],
             "displayedAttributes": [
                 "id", "title", "description", "tags",
                 "category", "resolution", "color",
-                "isVideo", "fullURL", "uploadedAt"
+                "isVideo", "fullURL", "uploadedAt", "uploaded_by"
             ]
         ]
         let request = try makeRequest(method: "PATCH", path: "/indexes/\(indexName)/settings", body: settings)

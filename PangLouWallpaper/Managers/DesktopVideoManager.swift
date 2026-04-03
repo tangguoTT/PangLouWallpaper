@@ -13,8 +13,8 @@ import AVKit
 class DesktopVideoManager: NSObject {
     static let shared = DesktopVideoManager()
     private var videoWindows: [NSWindow] = []
-    private var videoPlayers: [AVPlayer] = []
-    private var playerLooperObservers: [NSObjectProtocol] = []
+    private var videoPlayers: [AVQueuePlayer] = []
+    private var playerLoopers: [AVPlayerLooper] = []
 
     override init() {
         super.init()
@@ -41,16 +41,15 @@ class DesktopVideoManager: NSObject {
     func clearVideoWallpaper() {
         for player in videoPlayers {
             player.pause()
-            player.replaceCurrentItem(with: nil)
+            player.removeAllItems()
         }
         for window in videoWindows {
             window.contentView = nil
             window.orderOut(nil)
         }
-        for observer in playerLooperObservers { NotificationCenter.default.removeObserver(observer) }
         videoWindows.removeAll()
         videoPlayers.removeAll()
-        playerLooperObservers.removeAll()
+        playerLoopers.removeAll()
     }
 
     func playVideoOnDesktop(url: URL, screenName: String = "全部") {
@@ -70,16 +69,14 @@ class DesktopVideoManager: NSObject {
             window.collectionBehavior = [.stationary, .ignoresCycle, .fullScreenNone]
             window.backgroundColor = .black
             
-            let player = AVPlayer(url: url)
-            player.actionAtItemEnd = .none
+            let playerItem = AVPlayerItem(url: url)
+            let player = AVQueuePlayer(items: [playerItem])
             player.isMuted = true
             player.preventsDisplaySleepDuringVideoPlayback = false
-            
-            let observer = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { _ in
-                player.seek(to: .zero); player.play()
-            }
-            playerLooperObservers.append(observer)
-            
+
+            let looper = AVPlayerLooper(player: player, templateItem: playerItem)
+            playerLoopers.append(looper)
+
             let playerView = AVPlayerView()
             playerView.player = player
             playerView.controlsStyle = .none

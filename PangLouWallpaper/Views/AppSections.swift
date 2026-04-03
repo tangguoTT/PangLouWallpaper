@@ -16,7 +16,71 @@ struct TopNavigationBarView: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @Binding var isDarkMode: Bool
     @State private var showClearCacheAlert = false
-    var body: some View { HStack { HStack(spacing: 8) { Image(systemName: "camera.aperture").font(.system(size: 22)); Text("胖楼壁纸").font(.system(size: 18, weight: .bold)) }.padding(.horizontal, 16).padding(.vertical, 8).background(capsuleBgColor).clipShape(Capsule()).foregroundColor(.primary); Spacer(); HStack(spacing: 4) { NavPillButtonView(title: AppTab.pc.rawValue, icon: "desktopcomputer", isSelected: viewModel.currentTab == .pc) { viewModel.currentTab = .pc }; NavPillButtonView(title: AppTab.downloaded.rawValue, icon: "square.and.arrow.down", isSelected: viewModel.currentTab == .downloaded) { viewModel.currentTab = .downloaded }; NavPillButtonView(title: AppTab.slideshow.rawValue, icon: "photo.on.rectangle.angled", isSelected: viewModel.currentTab == .slideshow) { viewModel.currentTab = .slideshow }; NavPillButtonView(title: AppTab.collection.rawValue, icon: "rectangle.stack", isSelected: viewModel.currentTab == .collection) { viewModel.currentTab = .collection }; NavPillButtonView(title: AppTab.upload.rawValue, icon: "icloud.and.arrow.up", isSelected: viewModel.currentTab == .upload) { viewModel.currentTab = .upload } }.padding(4).background(capsuleBgColor).clipShape(Capsule()); Spacer(); HStack(spacing: 15) { CustomThemeToggleView(isDarkMode: $isDarkMode); Image(systemName: "bell").font(.system(size: 16)).foregroundColor(.primary); Button(action: { viewModel.randomWallpaper() }) { Image(systemName: "shuffle").font(.system(size: 16)).foregroundColor(.primary).frame(width: 24, height: 24) }.buttonStyle(.plain).help("随机换一张壁纸"); Menu { Button(action: { viewModel.showAbout = true }) { Text("关于胖楼壁纸"); Image(systemName: "info.circle") }; Divider(); Menu("壁纸适配：\(viewModel.wallpaperFit.rawValue)") { ForEach(WallpaperFit.allCases, id: \.self) { fit in Button(action: { viewModel.wallpaperFit = fit }) { if viewModel.wallpaperFit == fit { Label(fit.rawValue, systemImage: "checkmark") } else { Text(fit.rawValue) } } } }; Menu("显示器：\(viewModel.targetScreenName)") { ForEach(viewModel.availableScreenNames, id: \.self) { name in Button(action: { viewModel.targetScreenName = name }) { if viewModel.targetScreenName == name { Label(name, systemImage: "checkmark") } else { Text(name) } } } }; Toggle("开机自动启动", isOn: Binding(get: { viewModel.isAutoStartEnabled }, set: { viewModel.toggleAutoStart(enable: $0) })); Button(action: { viewModel.importLocalWallpaper() }) { Text("导入本地壁纸"); Image(systemName: "folder.badge.plus") }; Divider(); Button(role: .destructive, action: { showClearCacheAlert = true }) { Text("清除全部缓存 (\(viewModel.cacheSizeString))"); Image(systemName: "trash") } } label: { Image(systemName: "gearshape.fill").font(.system(size: 16)).foregroundColor(.primary).frame(width: 24, height: 24) }.menuStyle(.borderlessButton).alert("确定要清除缓存吗？", isPresented: $showClearCacheAlert) { Button("取消", role: .cancel) { }; Button("确认清除", role: .destructive) { viewModel.clearCache() } } message: { Text("这将释放 \(viewModel.cacheSizeString) 磁盘空间。正在使用的壁纸和您的轮播列表不会被删除。") }; } } }
+    var body: some View { HStack { HStack(spacing: 8) { Image(systemName: "camera.aperture").font(.system(size: 22)); Text("胖楼壁纸").font(.system(size: 18, weight: .bold)) }.padding(.horizontal, 16).padding(.vertical, 8).background(capsuleBgColor).clipShape(Capsule()).foregroundColor(.primary); Spacer(); HStack(spacing: 4) { NavPillButtonView(title: AppTab.pc.rawValue, icon: "desktopcomputer", isSelected: viewModel.currentTab == .pc) { viewModel.currentTab = .pc }; NavPillButtonView(title: AppTab.downloaded.rawValue, icon: "square.and.arrow.down", isSelected: viewModel.currentTab == .downloaded) { viewModel.currentTab = .downloaded }; NavPillButtonView(title: AppTab.slideshow.rawValue, icon: "photo.on.rectangle.angled", isSelected: viewModel.currentTab == .slideshow) { viewModel.currentTab = .slideshow }; NavPillButtonView(title: AppTab.collection.rawValue, icon: "rectangle.stack", isSelected: viewModel.currentTab == .collection) { viewModel.currentTab = .collection }; NavPillButtonView(title: AppTab.upload.rawValue, icon: "icloud.and.arrow.up", isSelected: viewModel.currentTab == .upload) { viewModel.currentTab = .upload } }.padding(4).background(capsuleBgColor).clipShape(Capsule()); Spacer(); HStack(spacing: 15) { CustomThemeToggleView(isDarkMode: $isDarkMode); Image(systemName: "bell").font(.system(size: 16)).foregroundColor(.primary); Button(action: { viewModel.randomWallpaper() }) { Image(systemName: "shuffle").font(.system(size: 16)).foregroundColor(.primary).frame(width: 24, height: 24) }.buttonStyle(.plain).help("随机换一张壁纸"); Menu { Button(action: { viewModel.showAbout = true }) { Text("关于胖楼壁纸"); Image(systemName: "info.circle") }; Divider(); Menu("壁纸适配：\(viewModel.wallpaperFit.rawValue)") { ForEach(WallpaperFit.allCases, id: \.self) { fit in Button(action: { viewModel.wallpaperFit = fit }) { if viewModel.wallpaperFit == fit { Label(fit.rawValue, systemImage: "checkmark") } else { Text(fit.rawValue) } } } }; Menu("显示器：\(viewModel.targetScreenName)") { ForEach(viewModel.availableScreenNames, id: \.self) { name in Button(action: { viewModel.targetScreenName = name }) { if viewModel.targetScreenName == name { Label(name, systemImage: "checkmark") } else { Text(name) } } } }; Toggle("开机自动启动", isOn: Binding(get: { viewModel.isAutoStartEnabled }, set: { viewModel.toggleAutoStart(enable: $0) })); Button(action: { viewModel.importLocalWallpaper() }) { Text("导入本地壁纸"); Image(systemName: "folder.badge.plus") }; Divider(); Button(role: .destructive, action: { showClearCacheAlert = true }) { Text("清除全部缓存 (\(viewModel.cacheSizeString))"); Image(systemName: "trash") } } label: { Image(systemName: "gearshape.fill").font(.system(size: 16)).foregroundColor(.primary).frame(width: 24, height: 24) }.menuStyle(.borderlessButton).alert("确定要清除缓存吗？", isPresented: $showClearCacheAlert) { Button("取消", role: .cancel) { }; Button("确认清除", role: .destructive) { viewModel.clearCache() } } message: { Text("这将释放 \(viewModel.cacheSizeString) 磁盘空间。正在使用的壁纸和您的轮播列表不会被删除。") }; UserAccountButtonView(viewModel: viewModel) } } }
+}
+
+// MARK: - 登录按钮（导航栏右侧）
+
+struct UserAccountButtonView: View {
+    @ObservedObject var viewModel: WallpaperViewModel
+
+    var body: some View {
+        if viewModel.isLoggedIn {
+            Button(action: { viewModel.showUserSpace = true }) {
+                let url = viewModel.currentProfile?.avatarURL ?? ""
+                if !url.isEmpty, let imageURL = URL(string: url) {
+                    AsyncImage(url: imageURL) { phase in
+                        if case .success(let img) = phase {
+                            img.resizable().scaledToFill()
+                                .frame(width: 28, height: 28)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.system(size: 22)).foregroundColor(.accentColor)
+                        }
+                    }
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 22)).foregroundColor(.accentColor)
+                }
+            }.buttonStyle(.plain).help("用户空间")
+        } else {
+            Button(action: { viewModel.showLoginSheet = true }) {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 18))
+                    .foregroundColor(.primary)
+                    .frame(width: 28, height: 28)
+            }.buttonStyle(.plain).help("登录 / 注册")
+        }
+    }
+}
+
+// MARK: - 上传 tab 未登录提示
+
+struct LoginRequiredView: View {
+    @ObservedObject var viewModel: WallpaperViewModel
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "lock.circle")
+                .font(.system(size: 60))
+                .foregroundColor(.primary.opacity(0.2))
+            Text("上传功能需要登录")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.primary.opacity(0.6))
+            Text("登录后即可上传壁纸，合集也会自动云端同步")
+                .font(.system(size: 14))
+                .foregroundColor(.primary.opacity(0.4))
+            Button(action: { viewModel.showLoginSheet = true }) {
+                Text("立即登录 / 注册")
+                    .fontWeight(.bold).foregroundColor(.white)
+                    .padding(.horizontal, 28).padding(.vertical, 12)
+                    .background(Color.accentColor).clipShape(Capsule())
+            }.buttonStyle(.plain)
+            Spacer()
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
 struct LocalFileThumbnailView: View {
@@ -178,15 +242,33 @@ struct PendingUploadRowView: View {
 // 🌟🌟🌟 核心手术：无敌自适应切分布局引擎 🌟🌟🌟
 struct WallpaperGridView: View {
     @ObservedObject var viewModel: WallpaperViewModel
-    var emptyText: String { switch viewModel.currentTab { case .pc: return "未找到相关壁纸"; case .downloaded: return "暂无下载缓存"; case .slideshow: return "暂无轮播壁纸，请去已下载中点亮右上角星星添加"; case .upload: return viewModel.uploadMode == .manage ? "云端暂无壁纸" : ""; case .collection: return "该合集还没有壁纸，去其他标签页点击壁纸右下角书签按钮添加" } }
+    var emptyText: String {
+        switch viewModel.currentTab {
+        case .pc:         return "未找到相关壁纸"
+        case .downloaded:
+            return viewModel.downloadedSubTab == .localImports ? "还没有本地导入的壁纸" : "暂无下载缓存"
+        case .slideshow:  return "暂无轮播壁纸，请去已下载中点亮右上角星星添加"
+        case .upload:     return viewModel.uploadMode == .manage ? "暂无壁纸" : ""  // local handled internally
+        case .collection: return "该合集还没有壁纸，去其他标签页点击壁纸右下角书签按钮添加"
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             if viewModel.currentTab == .upload {
-                Picker("", selection: $viewModel.uploadMode) { Text("待上传新壁纸").tag(UploadMode.pending); Text("管理云端壁纸").tag(UploadMode.manage) }
+                Picker("", selection: $viewModel.uploadMode) {
+                    Text("待上传新壁纸").tag(UploadMode.pending)
+                    Text(viewModel.isDeveloper ? "管理全部壁纸" : "我的上传记录").tag(UploadMode.manage)
+                }
                 .pickerStyle(.segmented).padding(.horizontal, 30).padding(.bottom, 15)
 
-                if viewModel.uploadMode == .pending { UploadManagerView(viewModel: viewModel) } else { gridContent }
+                if !viewModel.isLoggedIn {
+                    LoginRequiredView(viewModel: viewModel)
+                } else if viewModel.uploadMode == .pending {
+                    UploadManagerView(viewModel: viewModel)
+                } else {
+                    gridContent
+                }
             } else if viewModel.currentTab == .collection {
                 if viewModel.selectedCollectionId != nil {
                     // 合集详情：顶部返回按钮 + 壁纸网格
@@ -210,6 +292,19 @@ struct WallpaperGridView: View {
                     CollectionsGridView(viewModel: viewModel)
                 }
             } else {
+                if viewModel.currentTab == .downloaded {
+                    HStack {
+                        Picker("", selection: $viewModel.downloadedSubTab) {
+                            Text("已下载").tag(DownloadedSubTab.local)
+                            Text("本地导入").tag(DownloadedSubTab.localImports)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 240)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 30)
+                    .padding(.bottom, 15)
+                }
                 if viewModel.currentTab == .slideshow {
                     VStack(spacing: 10) {
                         HStack(spacing: 20) { Toggle(isOn: $viewModel.isSlideshowEnabled) { Text("启用自动轮播").font(.system(size: 14, weight: .bold)) }.toggleStyle(.switch); HStack(spacing: 8) { Text("切换频率:").font(.system(size: 13, weight: .medium)).foregroundColor(.secondary); Picker("", selection: $viewModel.slideshowInterval) { Text("1 分钟").tag(60.0); Text("15 分钟").tag(900.0); Text("1 小时").tag(3600.0); Text("24 小时").tag(86400.0) }.labelsHidden().frame(width: 100) }; Toggle(isOn: $viewModel.isSlideshowRandom) { Text("随机播放").font(.system(size: 13, weight: .medium)) }.toggleStyle(.switch); Spacer()
@@ -423,6 +518,50 @@ struct CollectionCardView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
         .onHover { isHovered = $0 }
         .onTapGesture { viewModel.selectedCollectionId = collection.id }
+    }
+}
+
+// MARK: - 本地导入壁纸网格
+
+struct LocalImportsGridView: View {
+    @ObservedObject var viewModel: WallpaperViewModel
+
+    var body: some View {
+        if viewModel.localImports.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "photo.badge.plus")
+                    .font(.system(size: 48))
+                    .foregroundColor(.secondary.opacity(0.5))
+                Text("还没有本地导入的壁纸")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.secondary)
+                Text("点击右上角 ⚙️ → 导入本地壁纸")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 280))], spacing: 16) {
+                    ForEach(viewModel.localImports) { item in
+                        ZStack(alignment: .topTrailing) {
+                            WallpaperCardView(item: item, viewModel: viewModel)
+                                .aspectRatio(16/10, contentMode: .fit)
+                            Button(action: { viewModel.deleteLocalImport(item) }) {
+                                Image(systemName: "trash.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(.red)
+                                    .background(Circle().fill(Color.white).padding(2))
+                                    .shadow(radius: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(8)
+                        }
+                    }
+                }
+                .padding(20)
+            }
+        }
     }
 }
 

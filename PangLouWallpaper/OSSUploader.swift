@@ -70,6 +70,13 @@ class OSSUploader {
         )
     }
 
+    /// 上传用户头像到 avatars/{userId}.jpg，返回公开访问 URL
+    func uploadAvatar(userId: String, imageData: Data) async throws -> String {
+        let objectKey = "avatars/\(userId).jpg"
+        try await putObject(objectKey: objectKey, data: imageData, fileExtension: "jpg", onProgress: nil)
+        return "\(customDomain)/\(objectKey)"
+    }
+
     /// 上传视频首帧缩略图到 thumbnails/{itemId}.jpg
     func uploadVideoThumbnail(videoURL: URL, itemId: String) async throws {
         let asset     = AVURLAsset(url: videoURL)

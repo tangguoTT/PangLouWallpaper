@@ -34,12 +34,25 @@ class WallpaperCacheManager {
     }
     
     func fetchImage(for url: URL) async -> NSImage? {
+        // 本地文件直接读取，无需缓存
+        if url.isFileURL {
+            return await Task.detached(priority: .utility) { NSImage(contentsOf: url) }.value
+        }
         let localPath = getLocalPath(for: url)
-        if let data = try? Data(contentsOf: localPath), let image = NSImage(data: data) { return image }
+        // 磁盘 I/O 放到后台线程，避免阻塞主线程
+        if let image = await Task.detached(priority: .utility) { () -> NSImage? in
+            guard let data = try? Data(contentsOf: localPath) else { return nil }
+            return NSImage(data: data)
+        }.value {
+            return image
+        }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            try? data.write(to: localPath)
-            return NSImage(data: data)
+            // 写盘也在后台完成，同时解码图片
+            return await Task.detached(priority: .utility) { () -> NSImage? in
+                try? data.write(to: localPath)
+                return NSImage(data: data)
+            }.value
         } catch { return nil }
     }
 }

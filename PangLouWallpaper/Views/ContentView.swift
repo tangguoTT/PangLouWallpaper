@@ -25,7 +25,7 @@ struct ContentView: View {
                         .padding(.top, 15)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     
-                    let hideBottomBar = (viewModel.currentTab == .upload && viewModel.uploadMode != .manage)
+                    let hideBottomBar = (viewModel.currentTab == .upload && viewModel.uploadMode == .pending)
                         || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
                     if !hideBottomBar {
                         BottomFloatingBarView(viewModel: viewModel)
@@ -35,10 +35,12 @@ struct ContentView: View {
                 }
                 // 🌟 强制规定：VStack 尺寸绝对不能超过当前可用空间！
                 .frame(width: geo.size.width, height: geo.size.height)
+                .disabled(viewModel.showLoginSheet || viewModel.showAbout || viewModel.showUserSpace || viewModel.previewItem != nil || viewModel.editingWallpaper != nil || viewModel.addToCollectionTargetItem != nil)
             }
             
             if viewModel.showAbout {
                 Color.black.opacity(0.5).ignoresSafeArea()
+                    .allowsHitTesting(viewModel.showAbout)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.showAbout = false } }
                 VStack {
                     Spacer()
@@ -51,6 +53,7 @@ struct ContentView: View {
 
             if viewModel.previewItem != nil {
                 Color.black.opacity(0.55).ignoresSafeArea()
+                    .allowsHitTesting(viewModel.previewItem != nil)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil } }
                 VStack {
                     Spacer()
@@ -65,6 +68,7 @@ struct ContentView: View {
 
             if viewModel.addToCollectionTargetItem != nil {
                 Color.black.opacity(0.5).ignoresSafeArea()
+                    .allowsHitTesting(viewModel.addToCollectionTargetItem != nil)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.addToCollectionTargetItem = nil } }
                 VStack {
                     Spacer()
@@ -76,7 +80,9 @@ struct ContentView: View {
             }
 
             if viewModel.editingWallpaper != nil {
-                Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { viewModel.cancelEdit() }
+                Color.black.opacity(0.5).ignoresSafeArea()
+                    .allowsHitTesting(viewModel.editingWallpaper != nil)
+                    .onTapGesture { viewModel.cancelEdit() }
                 // 保证弹窗永远在屏幕正中间
                 VStack {
                     Spacer()
@@ -87,7 +93,71 @@ struct ContentView: View {
                 .zIndex(100)
             }
 
+            if viewModel.showUserSpace {
+                // 遮罩：纯视觉，不拦截事件（allowsHitTesting false）
+                // 点击空白由 HStack 内的 Spacer 手势处理，避免 HStack 吞掉事件后无人消费
+                Color.black.opacity(0.35)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .zIndex(102)
+
+                // 抽屉：从右侧滑入
+                // Spacer 区域直接绑定 onTapGesture 关闭抽屉，
+                // 确保左侧空白点击被正确处理而不是被 HStack 吞掉
+                HStack(spacing: 0) {
+                    Spacer()
+                        .contentShape(Rectangle())
+                        .onTapGesture { viewModel.showUserSpace = false }
+                    UserSpaceView(viewModel: viewModel)
+                }
+                .transition(.move(edge: .trailing))
+                .zIndex(103)
+            }
+
+            if viewModel.showEditProfile {
+                Color.black.opacity(0.5).ignoresSafeArea()
+                    .allowsHitTesting(viewModel.showEditProfile)
+                    .onTapGesture { viewModel.showEditProfile = false }
+                    .zIndex(103.5)
+                VStack {
+                    Spacer()
+                    EditProfileView(viewModel: viewModel)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    Spacer()
+                }
+                .zIndex(104)
+            }
+
+            if viewModel.showChangePassword {
+                Color.black.opacity(0.5).ignoresSafeArea()
+                    .allowsHitTesting(viewModel.showChangePassword)
+                    .onTapGesture { viewModel.showChangePassword = false }
+                    .zIndex(103.5)
+                VStack {
+                    Spacer()
+                    ChangePasswordView(viewModel: viewModel)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    Spacer()
+                }
+                .zIndex(104)
+            }
+
+            if viewModel.showLoginSheet {
+                Color.black.opacity(0.5).ignoresSafeArea()
+                    .allowsHitTesting(viewModel.showLoginSheet)
+                    .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.showLoginSheet = false } }
+                VStack {
+                    Spacer()
+                    AuthView(viewModel: viewModel)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    Spacer()
+                }
+                .zIndex(101)
+            }
+
         }
+        .animation(.easeInOut(duration: 0.28), value: viewModel.showUserSpace)
         .frame(minWidth: 1100, minHeight: 750)
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear {
@@ -114,12 +184,5 @@ struct ContentView: View {
             }
             .animation(.easeInOut, value: viewModel.statusMessage)
         )
-        .onTapGesture {
-            if viewModel.showTypeMenu || viewModel.showCategoryMenu || viewModel.showResolutionMenu || viewModel.showColorMenu {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    viewModel.showTypeMenu = false; viewModel.showCategoryMenu = false; viewModel.showResolutionMenu = false; viewModel.showColorMenu = false
-                }
-            }
-        }
     }
 }
