@@ -95,9 +95,41 @@ class OSSUploader {
                             data: jpegData, fileExtension: "jpg", onProgress: nil)
     }
 
+    /// 生成并上传轻量预览片段到 previews/{itemId}.mp4，返回公开 URL
+    /// 截取前 3 秒，960x540 分辨率，用于卡片悬停动态预览
+    func uploadVideoPreview(videoURL: URL, itemId: String) async throws -> String {
+        let asset = AVURLAsset(url: videoURL)
+        let duration = try await asset.load(.duration)
+        let previewSeconds = min(3.0, duration.seconds)
+
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPreset960x540) else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        session.timeRange = CMTimeRange(start: .zero, duration: CMTime(seconds: previewSeconds, preferredTimescale: 600))
+        session.outputFileType = .mp4
+        session.shouldOptimizeForNetworkUse = true
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(itemId)_preview.mp4")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        try? FileManager.default.removeItem(at: tempURL)
+
+        try await session.export(to: tempURL, as: .mp4)
+
+        let data = try Data(contentsOf: tempURL)
+        let objectKey = "previews/\(itemId).mp4"
+        try await putObject(objectKey: objectKey, data: data, fileExtension: "mp4", onProgress: nil)
+        return "\(customDomain)/\(objectKey)"
+    }
+
     /// 删除视频对应的缩略图 thumbnails/{itemId}.jpg
     func deleteThumbnail(itemId: String) async throws {
         try await sendRequest(method: "DELETE", objectKey: "thumbnails/\(itemId).jpg", data: Data())
+    }
+
+    /// 删除视频对应的预览片段 previews/{itemId}.mp4
+    func deletePreview(itemId: String) async throws {
+        try await sendRequest(method: "DELETE", objectKey: "previews/\(itemId).mp4", data: Data())
     }
 
     /// 从 R2 删除文件。objectKey 从 fullURL 去掉 customDomain 前缀得到。
@@ -166,13 +198,22 @@ class OSSUploader {
         request.setValue(authorization, forHTTPHeaderField: "Authorization")
 
         if let onProgress {
-            // 用 delegate 跟踪上传字节数
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                let delegate = UploadProgressDelegate(onProgress: onProgress) { result in
-                    continuation.resume(with: result)
+            // 用 delegate 跟踪上传字节数，withTaskCancellationHandler 确保 Swift Task 取消时立即中止网络请求
+            final class TaskBox: @unchecked Sendable { var task: URLSessionUploadTask? }
+            let box = TaskBox()
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    let delegate = UploadProgressDelegate(onProgress: onProgress) { result in
+                        continuation.resume(with: result)
+                    }
+                    let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+                    let uploadTask = session.uploadTask(with: request, from: data)
+                    box.task = uploadTask
+                    if Task.isCancelled { uploadTask.cancel() }  // 处理极端竞争情况
+                    uploadTask.resume()
                 }
-                let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-                session.uploadTask(with: request, from: data).resume()
+            } onCancel: {
+                box.task?.cancel()
             }
         } else {
             let (_, response) = try await URLSession.shared.upload(for: request, from: data)

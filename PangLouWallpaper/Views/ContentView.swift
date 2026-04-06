@@ -8,40 +8,83 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var viewModel = WallpaperViewModel()
     @AppStorage("isDarkMode") private var isDarkMode: Bool = true
+    @State private var showSettings = false
 
     var body: some View {
         ZStack {
-            (isDarkMode ? Color(red: 0.08, green: 0.09, blue: 0.10) : Color(red: 0.95, green: 0.95, blue: 0.97))
-                .ignoresSafeArea()
-            
-            // 🌟 核心修复 1：利用 GeometryReader 拿到真实窗口尺寸，死死锁住边框
+            // Background
+            (isDarkMode
+                ? Color(red: 0.07, green: 0.08, blue: 0.10)
+                : Color(red: 0.94, green: 0.94, blue: 0.97)
+            ).ignoresSafeArea()
+
             GeometryReader { geo in
-                VStack(spacing: 0) {
-                    TopNavigationBarView(viewModel: viewModel, isDarkMode: $isDarkMode)
-                        .padding(.top, 20)
-                        .padding(.horizontal, 30)
-                    
-                    WallpaperGridView(viewModel: viewModel)
-                        .padding(.top, 15)
+                HStack(spacing: 0) {
+                    // ── Left Sidebar ──
+                    SidebarView(viewModel: viewModel, isDarkMode: $isDarkMode, showSettings: $showSettings)
+
+                    // Thin separator
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.06))
+                        .frame(width: 1)
+
+                    // ── Main Content Column ──
+                    if showSettings {
+                        SettingsView(viewModel: viewModel, isDarkMode: $isDarkMode)
+                    } else {
+                        let hideSearchBar = (viewModel.currentTab == .upload && viewModel.uploadMode == .pending)
+                            || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
+                        let hideBottomBar = hideSearchBar
+
+                        VStack(spacing: 0) {
+                            if !hideSearchBar {
+                                SearchFilterBarView(viewModel: viewModel)
+                                    .padding(.horizontal, 28)
+                                    .padding(.top, 18)
+                                    .padding(.bottom, 12)
+                                    .zIndex(10)
+                            } else {
+                                Color.clear.frame(height: 18)
+                            }
+
+                            WallpaperGridView(viewModel: viewModel)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .zIndex(1)
+
+                            if viewModel.currentTab == .downloaded
+                                && viewModel.downloadedSubTab == .local
+                                && viewModel.isBatchSelectMode {
+                                BatchActionBarView(viewModel: viewModel)
+                                    .padding(.horizontal, 28)
+                                    .padding(.vertical, 14)
+                                    .zIndex(1)
+                            } else if !hideBottomBar {
+                                PaginationBarView(viewModel: viewModel)
+                                    .padding(.horizontal, 28)
+                                    .padding(.vertical, 14)
+                                    .zIndex(1)
+                            } else {
+                                Color.clear.frame(height: 8)
+                            }
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    
-                    let hideBottomBar = (viewModel.currentTab == .upload && viewModel.uploadMode == .pending)
-                        || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
-                    if !hideBottomBar {
-                        BottomFloatingBarView(viewModel: viewModel)
-                            .padding(.top, 10)
-                            .padding(.bottom, 25)
                     }
                 }
-                // 🌟 强制规定：VStack 尺寸绝对不能超过当前可用空间！
                 .frame(width: geo.size.width, height: geo.size.height)
-                .disabled(viewModel.showLoginSheet || viewModel.showAbout || viewModel.showUserSpace || viewModel.previewItem != nil || viewModel.editingWallpaper != nil || viewModel.addToCollectionTargetItem != nil)
+                .disabled(
+                    viewModel.showLoginSheet || viewModel.showAbout ||
+                    viewModel.showUserSpace || viewModel.previewItem != nil ||
+                    viewModel.editingWallpaper != nil || viewModel.addToCollectionTargetItem != nil
+                )
             }
-            
+
+            // ── Modal Overlays ──
+
             if viewModel.showAbout {
                 Color.black.opacity(0.5).ignoresSafeArea()
-                    .allowsHitTesting(viewModel.showAbout)
+                    .allowsHitTesting(true)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.showAbout = false } }
+                    
                 VStack {
                     Spacer()
                     AboutView(viewModel: viewModel)
@@ -53,8 +96,9 @@ struct ContentView: View {
 
             if viewModel.previewItem != nil {
                 Color.black.opacity(0.55).ignoresSafeArea()
-                    .allowsHitTesting(viewModel.previewItem != nil)
+                    .allowsHitTesting(true)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil } }
+                    
                 VStack {
                     Spacer()
                     if let item = viewModel.previewItem {
@@ -68,8 +112,9 @@ struct ContentView: View {
 
             if viewModel.addToCollectionTargetItem != nil {
                 Color.black.opacity(0.5).ignoresSafeArea()
-                    .allowsHitTesting(viewModel.addToCollectionTargetItem != nil)
+                    .allowsHitTesting(true)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.addToCollectionTargetItem = nil } }
+                    
                 VStack {
                     Spacer()
                     AddToCollectionView(viewModel: viewModel)
@@ -81,9 +126,9 @@ struct ContentView: View {
 
             if viewModel.editingWallpaper != nil {
                 Color.black.opacity(0.5).ignoresSafeArea()
-                    .allowsHitTesting(viewModel.editingWallpaper != nil)
+                    .allowsHitTesting(true)
                     .onTapGesture { viewModel.cancelEdit() }
-                // 保证弹窗永远在屏幕正中间
+                    
                 VStack {
                     Spacer()
                     EditWallpaperPopupView(viewModel: viewModel)
@@ -94,21 +139,17 @@ struct ContentView: View {
             }
 
             if viewModel.showUserSpace {
-                // 遮罩：纯视觉，不拦截事件（allowsHitTesting false）
-                // 点击空白由 HStack 内的 Spacer 手势处理，避免 HStack 吞掉事件后无人消费
                 Color.black.opacity(0.35)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .transition(.opacity)
                     .zIndex(102)
 
-                // 抽屉：从右侧滑入
-                // Spacer 区域直接绑定 onTapGesture 关闭抽屉，
-                // 确保左侧空白点击被正确处理而不是被 HStack 吞掉
                 HStack(spacing: 0) {
                     Spacer()
                         .contentShape(Rectangle())
                         .onTapGesture { viewModel.showUserSpace = false }
+                        
                     UserSpaceView(viewModel: viewModel)
                 }
                 .transition(.move(edge: .trailing))
@@ -117,8 +158,9 @@ struct ContentView: View {
 
             if viewModel.showEditProfile {
                 Color.black.opacity(0.5).ignoresSafeArea()
-                    .allowsHitTesting(viewModel.showEditProfile)
+                    .allowsHitTesting(true)
                     .onTapGesture { viewModel.showEditProfile = false }
+                    
                     .zIndex(103.5)
                 VStack {
                     Spacer()
@@ -131,8 +173,9 @@ struct ContentView: View {
 
             if viewModel.showChangePassword {
                 Color.black.opacity(0.5).ignoresSafeArea()
-                    .allowsHitTesting(viewModel.showChangePassword)
+                    .allowsHitTesting(true)
                     .onTapGesture { viewModel.showChangePassword = false }
+                    
                     .zIndex(103.5)
                 VStack {
                     Spacer()
@@ -145,8 +188,9 @@ struct ContentView: View {
 
             if viewModel.showLoginSheet {
                 Color.black.opacity(0.5).ignoresSafeArea()
-                    .allowsHitTesting(viewModel.showLoginSheet)
+                    .allowsHitTesting(true)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.showLoginSheet = false } }
+                    
                 VStack {
                     Spacer()
                     AuthView(viewModel: viewModel)
@@ -155,7 +199,9 @@ struct ContentView: View {
                 }
                 .zIndex(101)
             }
-
+        }
+        .sheet(item: $viewModel.periodPickerTargetPeriod) { period in
+            PeriodWallpaperPickerView(period: period, viewModel: viewModel)
         }
         .animation(.easeInOut(duration: 0.28), value: viewModel.showUserSpace)
         .frame(minWidth: 1100, minHeight: 750)
@@ -178,7 +224,7 @@ struct ContentView: View {
                             .clipShape(Capsule())
                             .shadow(color: Color.black.opacity(0.1), radius: 5, y: 2)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
-                            .padding(.trailing, 30).padding(.bottom, 100)
+                            .padding(.trailing, 30).padding(.bottom, 30)
                     }
                 }
             }

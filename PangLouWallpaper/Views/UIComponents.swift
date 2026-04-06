@@ -9,25 +9,81 @@ import AVKit
 
 let capsuleBgColor = Color.primary.opacity(0.05)
 
-struct HoverVideoPlayerView: NSViewRepresentable {
+// MARK: - 精准 Hover 检测（绕过 SwiftUI onHover 相邻卡片冲突问题）
+
+/// 用原生 NSTrackingArea 实现卡片 hover，inset 2px 彻底消除相邻卡片追踪区重叠。
+private struct CardHoverTracker: NSViewRepresentable {
+    let onHover: (Bool) -> Void
+
+    func makeNSView(context: Context) -> CardHoverNSView {
+        let v = CardHoverNSView()
+        v.onHover = onHover
+        return v
+    }
+
+    func updateNSView(_ nsView: CardHoverNSView, context: Context) {
+        nsView.onHover = onHover
+    }
+}
+
+class CardHoverNSView: NSView {
+    var onHover: ((Bool) -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds.insetBy(dx: 2, dy: 2),
+            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent)  { onHover?(false) }
+
+    // 不拦截鼠标点击事件，让下层视图正常响应
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// 卡片动态预览
+/// - 卡片出现：优先读本地缓存，命中立刻播
+/// - 无缓存：延迟600ms（让缩略图先加载）后后台下载预览，完成后自动替换缩略图
+struct HoverVideoPlayerView: View {
     let item: WallpaperItem
+    @State private var localURL: URL?
 
-    func makeNSView(context: Context) -> VideoLayerView {
-        let view = VideoLayerView()
-        let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
-        let playURL = FileManager.default.fileExists(atPath: localURL.path) ? localURL : item.fullURL
-        view.setup(url: playURL)
-        return view
+    var body: some View {
+        ZStack {
+            if let url = localURL {
+                VideoLayerView.Representable(url: url)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: item.id) {
+            // 先查本地缓存（零网络请求）
+            if let cached = fromCacheOnly() {
+                localURL = cached
+                return
+            }
+            // 延迟让缩略图先加载，再后台下载预览
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            let remotePreview = item.previewURL ?? item.fullURL.ossPreview()
+            localURL = await WallpaperCacheManager.shared.fetchAndCachePreview(for: remotePreview)
+        }
     }
 
-    func updateNSView(_ nsView: VideoLayerView, context: Context) {}
-
-    static func dismantleNSView(_ nsView: VideoLayerView, coordinator: Coordinator) {
-        nsView.teardown()
+    private func fromCacheOnly() -> URL? {
+        // 优先使用轻量预览，避免用大体积全量视频渲染卡片，降低 GPU 压力
+        let remotePreview = item.previewURL ?? item.fullURL.ossPreview()
+        let cached = WallpaperCacheManager.shared.getPreviewCachePath(for: remotePreview)
+        if FileManager.default.fileExists(atPath: cached.path) { return cached }
+        // 预览未缓存时才回退到全量视频（本地文件直接播）
+        let full = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
+        return FileManager.default.fileExists(atPath: full.path) ? full : nil
     }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    class Coordinator {}
 }
 
 /// AVPlayerLayer 作为 backing layer，AppKit 自动同步尺寸，背景透明，视频未渲染时缩略图透出
@@ -41,7 +97,6 @@ class VideoLayerView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    // 将 AVPlayerLayer 直接设为 backing layer，无需手动管理 frame
     override func makeBackingLayer() -> CALayer {
         let pl = AVPlayerLayer()
         pl.videoGravity = .resizeAspectFill
@@ -52,14 +107,17 @@ class VideoLayerView: NSView {
     private var playerLayer: AVPlayerLayer? { layer as? AVPlayerLayer }
 
     func setup(url: URL) {
-        let p = AVPlayer(url: url)
+        let playerItem = AVPlayerItem(url: url)
+        playerItem.preferredForwardBufferDuration = 2  // 预览卡片只缓冲2秒，节省内存
+        let p = AVPlayer(playerItem: playerItem)
         p.isMuted = true
         p.actionAtItemEnd = .none
+        p.automaticallyWaitsToMinimizeStalling = false  // 有数据立刻播，不等缓冲
         playerLayer?.player = p
         player = p
         loopObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: p.currentItem, queue: .main
+            object: playerItem, queue: .main
         ) { [weak p] _ in p?.seek(to: .zero); p?.play() }
         p.play()
     }
@@ -69,6 +127,20 @@ class VideoLayerView: NSView {
         player?.pause()
         player = nil
         playerLayer?.player = nil
+    }
+
+    // NSViewRepresentable 包装，供 SwiftUI 使用
+    struct Representable: NSViewRepresentable {
+        let url: URL
+        func makeNSView(context: Context) -> VideoLayerView {
+            let v = VideoLayerView()
+            v.setup(url: url)
+            return v
+        }
+        func updateNSView(_ nsView: VideoLayerView, context: Context) {}
+        static func dismantleNSView(_ nsView: VideoLayerView, coordinator: Coordinator) { nsView.teardown() }
+        func makeCoordinator() -> Coordinator { Coordinator() }
+        class Coordinator {}
     }
 }
 
@@ -84,9 +156,6 @@ struct AsyncThumbnailView: View {
                         Image(nsImage: img)
                             .resizable()
                             .scaledToFill()
-                    } else if item.isVideo {
-                        // 视频缩略图加载中/不存在时显示深色占位（卡片上已有播放图标）
-                        Color(white: 0.12)
                     } else {
                         ProgressView().controlSize(.small)
                     }
@@ -105,12 +174,14 @@ struct AsyncThumbnailView: View {
                     }.value
                 } else {
                     // 本地图片直接读取；远端图片走 Cloudflare，视频走 thumbnails/{id}.jpg
+                    // 使用 fetchThumbnail（写入 thumb_ 前缀路径），避免污染 isDownloaded 判断
                     let thumbURL = item.fullURL.isFileURL
                         ? item.fullURL
                         : item.fullURL.ossThumb(isVideo: item.isVideo)
-                    thumbnail = await WallpaperCacheManager.shared.fetchImage(for: thumbURL)
+                    thumbnail = await WallpaperCacheManager.shared.fetchThumbnail(for: thumbURL)
                 }
             }
+            .onDisappear { thumbnail = nil }
     }
 }
 
@@ -143,31 +214,30 @@ struct WallpaperCardView: View {
         viewModel.isItemInAnyCollection(item)
     }
 
+    private var isBatchMode: Bool {
+        viewModel.isBatchSelectMode
+            && viewModel.currentTab == .downloaded
+            && viewModel.downloadedSubTab == .local
+    }
+
+    private var isBatchSelected: Bool {
+        viewModel.batchSelectedIds.contains(item.id)
+    }
+
     var body: some View {
         ZStack {
-            AsyncThumbnailView(item: item).cornerRadius(12).clipped()
+            // 预览点击区：悬停时（按钮可见）完全透明不拦截；批量模式下也不拦截（由覆盖层接管）
+            Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = item } }) {
+                Color.clear.contentShape(Rectangle())
+            }.buttonStyle(.plain).allowsHitTesting(!isHovered && !isBatchMode)
 
-            // 底部渐变 + 标题条（悬停时淡出）
-            VStack {
-                Spacer()
-                LinearGradient(colors: [.clear, .black.opacity(0.72)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: 52)
-                    .cornerRadius(12)
-            }
-            VStack {
-                Spacer()
-                HStack {
-                    Text(item.title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.92))
-                        .lineLimit(1)
-                    Spacer()
-                }.padding(.horizontal, 10).padding(.bottom, 8)
-            }
+            AsyncThumbnailView(item: item)
+                .scaleEffect(isHovered ? 1.06 : 1.0)
+                .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isHovered)
+                .cornerRadius(12)
+                .clipped()
+
             // 整体随悬停淡出
-            .opacity(isHovered ? 0 : 1)
-            .animation(.easeInOut(duration: 0.18), value: isHovered)
 
             // 分辨率角标（右上角，仅图片且有分辨率信息时显示）
             if !item.isVideo && !item.resolution.isEmpty && item.resolution != "全部" {
@@ -190,22 +260,18 @@ struct WallpaperCardView: View {
 
             if viewModel.currentTab == .pc && isDownloaded && !isHovered { VStack { Spacer(); HStack { Spacer(); Image(systemName: "checkmark.icloud.fill").font(.system(size: 14)).foregroundColor(Color(hex: "#449B3E")).padding(6).background(.ultraThinMaterial).clipShape(Circle()).padding(8).shadow(color: .black.opacity(0.2), radius: 3) } } }
             if isCurrentWallpaper && !isHovered { VStack { HStack { Text("使用中").font(.system(size: 10, weight: .bold)).foregroundColor(.white).padding(.horizontal, 8).padding(.vertical, 3).background(Color.accentColor).clipShape(Capsule()).padding(8); Spacer() }; Spacer() } }
-            if isHovered && item.isVideo { HoverVideoPlayerView(item: item).cornerRadius(12).clipped().transition(.opacity) }
+            if item.isVideo {
+                HoverVideoPlayerView(item: item)
+                    .scaleEffect(isHovered ? 1.06 : 1.0)
+                    .cornerRadius(12)
+                    .clipped()
+                    .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isHovered)
+            }
             
             let isDownloading = viewModel.downloadProgress[item.id] != nil
             
             if isHovered && !isDownloading {
                 (colorScheme == .dark ? Color.black : Color.white).opacity(0.3).cornerRadius(12)
-                    .onTapGesture(count: 2) {
-                        if viewModel.currentTab == .upload && viewModel.uploadMode == .manage {
-                            withAnimation { viewModel.beginEdit(item: item) }
-                        } else if viewModel.currentTab == .pc {
-                            guard viewModel.isLoggedIn else { viewModel.showLoginSheet = true; return }
-                            if isDownloaded { viewModel.setWallpaper(item: item) } else { viewModel.downloadWallpaper(item: item) }
-                        } else {
-                            viewModel.setWallpaper(item: item)
-                        }
-                    }
                     .overlay(
                         ZStack {
                             if viewModel.currentTab == .upload && viewModel.uploadMode == .manage {
@@ -217,7 +283,7 @@ struct WallpaperCardView: View {
                                         .shadow(radius: 3)
                                 }.buttonStyle(.plain)
                                 VStack { Spacer(); HStack { Spacer(); Button(action: { viewModel.deleteFromCloud(item: item) }) { Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.red.opacity(0.8)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).padding(8) } }
-                            } else {
+                            } else if viewModel.currentTab != .slideshow {
                                 Button(action: {
                                     if viewModel.currentTab == .pc {
                                         guard viewModel.isLoggedIn else { viewModel.showLoginSheet = true; return }
@@ -228,9 +294,6 @@ struct WallpaperCardView: View {
                                 }.buttonStyle(.plain)
 
                                 let isLocalImport = viewModel.downloadedSubTab == .localImports
-
-                                // 收藏按钮（右上角，本地导入除外）
-                                if !isLocalImport { VStack { HStack { Spacer(); Button(action: { viewModel.toggleFavorite(item: item) }) { Image(systemName: viewModel.favoriteIds.contains(item.id) ? "heart.fill" : "heart").font(.system(size: 13)).foregroundColor(viewModel.favoriteIds.contains(item.id) ? .pink : .white).padding(8).background(Color.black.opacity(0.5)).clipShape(Circle()) }.buttonStyle(.plain).padding(8) }; Spacer() } }
 
                                 if !isLocalImport && viewModel.currentTab != .pc && viewModel.currentTab != .collection {
                                     VStack { HStack { Button(action: { viewModel.toggleInPlaylist(item: item) }) { Image(systemName: viewModel.playlistIds.contains(item.id) ? "star.fill" : "star").font(.system(size: 13)).foregroundColor(viewModel.playlistIds.contains(item.id) ? .yellow : .white).padding(8).background(Color.black.opacity(0.5)).clipShape(Circle()) }.buttonStyle(.plain).padding(8); Spacer() }; Spacer() }
@@ -244,7 +307,7 @@ struct WallpaperCardView: View {
                                     VStack { Spacer(); HStack { Spacer(); Button(action: { viewModel.setCoverWallpaper(for: colId, wallpaperId: item.id) }) { Image(systemName: "photo.badge.checkmark").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.accentColor.opacity(0.85)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).help("设为合集封面").padding(8) } }
                                 }
 
-                                if viewModel.currentTab == .downloaded { VStack { Spacer(); HStack { Spacer(); Button(action: { if viewModel.downloadedSubTab == .localImports { showDeleteConfirm = true } else { viewModel.deleteSingleCache(for: item) } }) { Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.red.opacity(0.8)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).padding(8) } } }
+                                if viewModel.currentTab == .downloaded { VStack { Spacer(); HStack { Spacer(); Button(action: { showDeleteConfirm = true }) { Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.red.opacity(0.8)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).padding(8) } } }
                             }
                         }
                     )
@@ -269,14 +332,55 @@ struct WallpaperCardView: View {
                 }.transition(.opacity).zIndex(11)
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(isCurrentWallpaper ? Color.accentColor : Color.primary.opacity(0.05), lineWidth: isCurrentWallpaper ? 2 : 1)).shadow(color: Color.primary.opacity(isHovered ? 0.2 : 0.05), radius: isHovered ? 10 : 4, y: isHovered ? 5 : 2).scaleEffect(isHovered ? 1.02 : 1.0).animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered).onHover { isHovered = $0 }
-        .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = item } }
-        .task(id: viewModel.cacheSizeString) { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); isDownloaded = FileManager.default.fileExists(atPath: localURL.path) }
-        .confirmationDialog("删除本地导入的壁纸", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("删除", role: .destructive) { viewModel.deleteLocalImport(item) }
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(isCurrentWallpaper ? Color.accentColor : Color.primary.opacity(0.05), lineWidth: isCurrentWallpaper ? 2 : 1))
+        // 批量选择覆盖层
+        .overlay(
+            Group {
+                if isBatchMode {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isBatchSelected ? Color.accentColor : Color.white.opacity(0.3), lineWidth: isBatchSelected ? 2.5 : 1)
+                        if isBatchSelected {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.accentColor.opacity(0.18))
+                        }
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Image(systemName: isBatchSelected ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(isBatchSelected ? .accentColor : .white.opacity(0.7))
+                                    .shadow(color: .black.opacity(0.3), radius: 3)
+                                    .padding(8)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.toggleBatchSelection(item: item) }
+                }
+            }
+        )
+        .shadow(color: Color.primary.opacity(isHovered ? 0.22 : 0.05), radius: isHovered ? 12 : 4, y: isHovered ? 6 : 2)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .animation(.easeInOut(duration: 0.1), value: isBatchSelected)
+        .background(CardHoverTracker { isHovered = $0 })
+        .task(id: "\(item.id)_\(viewModel.cacheVersion)") { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); isDownloaded = FileManager.default.fileExists(atPath: localURL.path) }
+        .confirmationDialog(viewModel.downloadedSubTab == .localImports ? "删除本地导入的壁纸" : "删除壁纸缓存", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                if viewModel.downloadedSubTab == .localImports {
+                    viewModel.deleteLocalImport(item)
+                } else {
+                    viewModel.deleteSingleCache(for: item)
+                }
+            }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("「\(item.title.isEmpty ? "该壁纸" : item.title)」将从本地导入列表中移除，原始文件不受影响。")
+            if viewModel.downloadedSubTab == .localImports {
+                Text("「\(item.title.isEmpty ? "该壁纸" : item.title)」将从本地导入列表中移除，原始文件不受影响。")
+            } else {
+                Text("「\(item.title.isEmpty ? "该壁纸" : item.title)」的本地缓存将被删除，可重新下载。")
+            }
         }
     }
 }
@@ -607,7 +711,7 @@ struct WallpaperPreviewView: View {
                                 .background(Color.accentColor).clipShape(Capsule())
                             }.buttonStyle(.plain).disabled(isDownloading)
                         }
-                    } else {
+                    } else if viewModel.currentTab != .slideshow {
                         Button(action: {
                             viewModel.setWallpaper(item: item)
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil }
@@ -622,7 +726,7 @@ struct WallpaperPreviewView: View {
                         }.buttonStyle(.plain).disabled(isDownloading)
                     }
 
-                    if viewModel.currentTab != .pc {
+                    if viewModel.currentTab != .pc && viewModel.currentTab != .slideshow {
                         Button(action: { viewModel.toggleInPlaylist(item: item) }) {
                             HStack(spacing: 6) {
                                 Image(systemName: viewModel.playlistIds.contains(item.id) ? "star.fill" : "star")

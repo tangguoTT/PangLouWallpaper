@@ -5,6 +5,13 @@
 
 import Foundation
 
+/// 审核状态：nil 表示旧数据（视为 approved）
+enum ApprovalStatus: String, Codable {
+    case pending  = "pending"   // 待审核
+    case approved = "approved"  // 已通过
+    case rejected = "rejected"  // 已拒绝
+}
+
 struct WallpaperItem: Identifiable, Codable, Hashable {
     let id: String
     let title: String
@@ -15,14 +22,21 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
     let color: String
     let isVideo: Bool
     let fullURL: URL
+    /// 轻量预览片段（上传时截取前4秒压缩生成），用于卡片悬停动态预览
+    var previewURL: URL?
     let uploadedAt: Int
     let uploadedBy: String?
+    /// nil = 旧数据，等同于 approved
+    var approvalStatus: ApprovalStatus?
+    var rejectionReason: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, isVideo, fullURL
+        case id, title, isVideo, fullURL, previewURL
         case wallpaperDescription = "description"
         case tags, category, resolution, color, uploadedAt
-        case uploadedBy = "uploaded_by"
+        case uploadedBy      = "uploaded_by"
+        case approvalStatus  = "approval_status"
+        case rejectionReason = "rejection_reason"
     }
 
     init(
@@ -35,8 +49,11 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
         color: String = "",
         isVideo: Bool,
         fullURL: URL,
+        previewURL: URL? = nil,
         uploadedAt: Int = 0,
-        uploadedBy: String? = nil
+        uploadedBy: String? = nil,
+        approvalStatus: ApprovalStatus? = nil,
+        rejectionReason: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -47,8 +64,11 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
         self.color = color
         self.isVideo = isVideo
         self.fullURL = fullURL
+        self.previewURL = previewURL
         self.uploadedAt = uploadedAt
         self.uploadedBy = uploadedBy
+        self.approvalStatus = approvalStatus
+        self.rejectionReason = rejectionReason
     }
 
     // 兼容旧格式 JSON（缺失字段给默认值）
@@ -58,13 +78,21 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
         title = try c.decode(String.self, forKey: .title)
         isVideo = try c.decode(Bool.self, forKey: .isVideo)
         fullURL = try c.decode(URL.self, forKey: .fullURL)
+        previewURL = try? c.decodeIfPresent(URL.self, forKey: .previewURL)
         wallpaperDescription = (try? c.decodeIfPresent(String.self, forKey: .wallpaperDescription)) ?? ""
         tags = (try? c.decodeIfPresent([String].self, forKey: .tags)) ?? []
         category = (try? c.decodeIfPresent(String.self, forKey: .category)) ?? ""
         resolution = (try? c.decodeIfPresent(String.self, forKey: .resolution)) ?? ""
         color = (try? c.decodeIfPresent(String.self, forKey: .color)) ?? ""
         uploadedAt = (try? c.decodeIfPresent(Int.self, forKey: .uploadedAt)) ?? 0
-        uploadedBy = (try? c.decodeIfPresent(String.self, forKey: .uploadedBy)) ?? nil
+        uploadedBy = try? c.decodeIfPresent(String.self, forKey: .uploadedBy)
+        approvalStatus = try? c.decodeIfPresent(ApprovalStatus.self, forKey: .approvalStatus)
+        rejectionReason = try? c.decodeIfPresent(String.self, forKey: .rejectionReason)
+    }
+
+    /// 是否对所有用户可见（通过审核或旧数据）
+    var isPubliclyVisible: Bool {
+        approvalStatus == nil || approvalStatus == .approved
     }
 }
 
@@ -108,6 +136,33 @@ struct WallpaperCollection: Identifiable, Codable {
 enum DownloadedSubTab {
     case local         // 已下载到本地缓存
     case localImports  // 本地导入
+}
+
+// MARK: - 定时换壁纸时间段
+
+enum DayPeriod: String, CaseIterable, Codable, Identifiable {
+    case morning   = "早晨"   // 06:00–12:00
+    case afternoon = "下午"   // 12:00–18:00
+    case night     = "夜晚"   // 18:00–06:00
+
+    var id: String { rawValue }
+
+    var timeRange: String {
+        switch self {
+        case .morning:   return "06:00 – 12:00"
+        case .afternoon: return "12:00 – 18:00"
+        case .night:     return "18:00 – 06:00"
+        }
+    }
+
+    static func current() -> DayPeriod {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 6..<12:  return .morning
+        case 12..<18: return .afternoon
+        default:      return .night
+        }
+    }
 }
 
 enum WallpaperFit: String, CaseIterable {

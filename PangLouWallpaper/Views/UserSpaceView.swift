@@ -139,6 +139,7 @@ struct UserSpaceView: View {
                             .aspectRatio(16/10, contentMode: .fit)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .onTapGesture { viewModel.previewItem = item }
+                            
                     }
                 }
                 if viewModel.userUploads.count > 12 {

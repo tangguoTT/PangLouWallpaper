@@ -26,4 +26,15 @@ extension URL {
             return URL(string: "\(scheme)://\(host)/cdn-cgi/image/width=400,height=250,fit=cover\(path)") ?? self
         }
     }
+
+    /// 轻量预览片段路径：previews/{id}.mp4
+    func ossPreview() -> URL {
+        let base = self.absoluteString
+        guard let hostRange = base.range(of: "://"),
+              let slash = base[hostRange.upperBound...].firstIndex(of: "/") else { return self }
+        let scheme = String(base[base.startIndex ..< hostRange.lowerBound])
+        let host   = String(base[hostRange.upperBound ..< slash])
+        let stem   = self.deletingPathExtension().lastPathComponent
+        return URL(string: "\(scheme)://\(host)/previews/\(stem).mp4") ?? self
+    }
 }

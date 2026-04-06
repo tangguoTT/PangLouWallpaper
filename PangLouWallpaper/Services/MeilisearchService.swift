@@ -89,7 +89,7 @@ class MeilisearchService {
         try checkHTTP(response, data: respData)
     }
 
-    /// 查询指定用户上传的壁纸
+    /// 查询指定用户上传的壁纸（含所有审核状态）
     func getUserUploads(userId: String) async throws -> [WallpaperItem] {
         let response = try await search(
             query: "",
@@ -98,6 +98,36 @@ class MeilisearchService {
             hitsPerPage: 200
         )
         return response.hits
+    }
+
+    /// 查询待审核壁纸
+    func getPendingWallpapers() async throws -> [WallpaperItem] {
+        let response = try await search(
+            query: "",
+            filters: ["approval_status = \"pending\""],
+            page: 0,
+            hitsPerPage: 200
+        )
+        return response.hits
+    }
+
+    /// 更新壁纸审核状态
+    func updateApprovalStatus(
+        id: String,
+        status: ApprovalStatus,
+        rejectionReason: String? = nil
+    ) async throws {
+        var body: [String: Any] = [
+            "id": id,
+            "approval_status": status.rawValue
+        ]
+        if let reason = rejectionReason {
+            body["rejection_reason"] = reason
+        }
+        let data = try JSONSerialization.data(withJSONObject: [body])
+        let request = makeRawRequest(method: "PUT", path: "/indexes/\(indexName)/documents", body: data)
+        let (respData, response) = try await URLSession.shared.data(for: request)
+        try checkHTTP(response, data: respData)
     }
 
     /// 获取索引中全部文档（分页循环直到取完）
@@ -119,17 +149,63 @@ class MeilisearchService {
         return all
     }
 
+    // MARK: - 向量搜索（以图搜图）
+
+    /// 配置 userProvided 嵌入器（首次使用时调用一次）
+    func configureVectorSearch(dimension: Int) async throws {
+        let settings: [String: Any] = [
+            "embedders": [
+                "imageFeature": [
+                    "source": "userProvided",
+                    "dimensions": dimension
+                ]
+            ]
+        ]
+        let request = try makeRequest(method: "PATCH", path: "/indexes/\(indexName)/settings", body: settings)
+        let (respData, response) = try await URLSession.shared.data(for: request)
+        try checkHTTP(response, data: respData)
+    }
+
+    /// 以向量搜索相似壁纸
+    func vectorSearch(vector: [Float], hitsPerPage: Int = 24) async throws -> [WallpaperItem] {
+        let body: [String: Any] = [
+            "hybrid": ["embedder": "imageFeature", "semanticRatio": NSNumber(value: 1.0)],
+            "vector": vector.map { NSNumber(value: $0) },
+            "hitsPerPage": hitsPerPage
+        ]
+        let request = try makeRequest(method: "POST", path: "/indexes/\(indexName)/search", body: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTP(response, data: data)
+        return try JSONDecoder().decode(MeilisearchSearchResponse.self, from: data).hits
+    }
+
+    /// 为已入库文档追加图像特征向量
+    func updateDocumentVector(id: String, vector: [Float]) async throws {
+        let doc: [String: Any] = [
+            "id": id,
+            "_vectors": ["imageFeature": vector.map { NSNumber(value: $0) }]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: [doc])
+        let request = makeRawRequest(method: "PUT", path: "/indexes/\(indexName)/documents", body: data)
+        let (respData, response) = try await URLSession.shared.data(for: request)
+        try checkHTTP(response, data: respData)
+    }
+
     // MARK: - Index Settings（首次迁移时调用一次）
 
     func configureIndex() async throws {
         let settings: [String: Any] = [
             "searchableAttributes": ["title", "description", "tags"],
-            "filterableAttributes": ["category", "resolution", "color", "isVideo", "uploaded_by"],
+            "filterableAttributes": [
+                "category", "resolution", "color", "isVideo",
+                "uploaded_by", "approval_status"
+            ],
             "sortableAttributes": ["uploadedAt"],
             "displayedAttributes": [
                 "id", "title", "description", "tags",
                 "category", "resolution", "color",
-                "isVideo", "fullURL", "uploadedAt", "uploaded_by"
+                "isVideo", "fullURL", "uploadedAt",
+                "uploaded_by", "approval_status", "rejection_reason"
             ]
         ]
         let request = try makeRequest(method: "PATCH", path: "/indexes/\(indexName)/settings", body: settings)

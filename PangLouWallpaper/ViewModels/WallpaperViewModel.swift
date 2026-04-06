@@ -12,6 +12,7 @@ import CryptoKit
 
 enum UploadMode: String {
     case pending = "待上传列表"
+    case review  = "审核队列"
     case manage  = "云端壁纸管理"
 }
 
@@ -34,12 +35,25 @@ class WallpaperViewModel: ObservableObject {
     let itemsPerPage: Int = 12
 
     @Published var isAutoStartEnabled: Bool = false
+    @Published var isEnergySavingEnabled: Bool = UserDefaults.standard.bool(forKey: "energySavingEnabled") {
+        didSet { DesktopVideoManager.shared.isEnergySavingEnabled = isEnergySavingEnabled }
+    }
     @Published var cacheSizeString: String = "0 MB"
+    @Published var cacheVersion: Int = 0
+    @Published var cacheDirectoryPath: String = WallpaperCacheManager.shared.cacheDirectory.path
+
+    // MARK: - 以图搜图
+    @Published var imageSearchMode: Bool = false
+    @Published var imageSearchQueryImage: NSImage? = nil
+    @Published var isImageSearching: Bool = false
+    @Published var imageSearchResults: [WallpaperItem] = []
 
     @Published var currentTab: AppTab = .pc {
         didSet {
             currentPage = 0
             selectedCollectionId = nil
+            if isBatchSelectMode { isBatchSelectMode = false }
+            if imageSearchMode { clearImageSearch() }
             if currentTab == .pc { performSearch() }
         }
     }
@@ -69,7 +83,14 @@ class WallpaperViewModel: ObservableObject {
     @Published var customHeight: String = ""
 
     @Published var isSlideshowEnabled: Bool = false {
-        didSet { UserDefaults.standard.set(isSlideshowEnabled, forKey: "isSlideshowEnabled"); setupSlideshowTimer() }
+        didSet {
+            UserDefaults.standard.set(isSlideshowEnabled, forKey: "isSlideshowEnabled")
+            // 定时换壁纸和轮播互斥：开启轮播时自动关闭定时
+            if isSlideshowEnabled && isTimedPeriodEnabled {
+                isTimedPeriodEnabled = false
+            }
+            setupSlideshowTimer()
+        }
     }
     @Published var slideshowInterval: Double = 3600 {
         didSet { UserDefaults.standard.set(slideshowInterval, forKey: "slideshowInterval"); setupSlideshowTimer() }
@@ -81,13 +102,7 @@ class WallpaperViewModel: ObservableObject {
     @Published var playlistIds: [String] = [] {
         didSet { UserDefaults.standard.set(playlistIds, forKey: "playlistIds"); setupSlideshowTimer() }
     }
-    @Published var favoriteIds: [String] = [] {
-        didSet { UserDefaults.standard.set(favoriteIds, forKey: "favoriteIds") }
-    }
-    @Published var showOnlyFavorites: Bool = false {
-        didSet { currentPage = 0; if currentTab == .pc { performSearch() } }
-    }
-    @Published var wallpaperFit: WallpaperFit = .fill {
+@Published var wallpaperFit: WallpaperFit = .fill {
         didSet { UserDefaults.standard.set(wallpaperFit.rawValue, forKey: "wallpaperFit") }
     }
     @Published var targetScreenName: String = "全部" {
@@ -140,14 +155,44 @@ class WallpaperViewModel: ObservableObject {
     @Published var localImports: [WallpaperItem] = []
     @Published var userUploads: [WallpaperItem] = []
     @Published var isLoadingUserUploads: Bool = false
+    @Published var pendingReviewItems: [WallpaperItem] = []
+    @Published var isLoadingReview: Bool = false
 
     // MARK: - 已下载 tab 子分类
-    @Published var downloadedSubTab: DownloadedSubTab = .local
+    @Published var downloadedSubTab: DownloadedSubTab = .local {
+        didSet { if isBatchSelectMode { isBatchSelectMode = false } }
+    }
+
+    // MARK: - 批量操作
+    @Published var isBatchSelectMode: Bool = false {
+        didSet { if !isBatchSelectMode { batchSelectedIds.removeAll() } }
+    }
+    @Published var batchSelectedIds: Set<String> = []
+
+    // MARK: - 定时换壁纸
+    @Published var isTimedPeriodEnabled: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isTimedPeriodEnabled, forKey: "isTimedPeriodEnabled")
+            // 定时换壁纸和轮播互斥：开启定时时自动关闭轮播
+            if isTimedPeriodEnabled && isSlideshowEnabled {
+                isSlideshowEnabled = false
+            }
+            setupPeriodTimer()
+        }
+    }
+    @Published var periodWallpaperIds: [String: String] = [:] {
+        didSet { savePeriodAssignments() }
+    }
+    @Published var periodPickerTargetPeriod: DayPeriod? = nil
+    private var periodTimer: Timer?
+    private var lastAppliedPeriod: DayPeriod? = nil
 
     var availableScreenNames: [String] { ["全部"] + NSScreen.screens.map { $0.localizedName } }
 
     @Published var pendingUploads: [PendingUploadItem] = []
     @Published var uploadProgress: [UUID: Double] = [:]
+    @Published var isUploading: Bool = false
+    private var uploadTask: Task<Void, Never>?
 
     // MARK: - 合集
     @Published var collections: [WallpaperCollection] = []
@@ -177,12 +222,9 @@ class WallpaperViewModel: ObservableObject {
     // MARK: - 显示数据
 
     var displayWallpapers: [WallpaperItem] {
+        if imageSearchMode { return imageSearchResults }
         switch currentTab {
         case .pc:
-            // 电脑壁纸标签：结果来自 Meilisearch，只需在本地处理收藏过滤
-            if showOnlyFavorites {
-                return searchResults.filter { favoriteIds.contains($0.id) }
-            }
             return searchResults
 
         case .downloaded:
@@ -213,7 +255,6 @@ class WallpaperViewModel: ObservableObject {
     /// 本地过滤：统一用于 downloaded / slideshow 标签页
     private func applyLocalFilters(to items: [WallpaperItem]) -> [WallpaperItem] {
         var result = items
-        if showOnlyFavorites { result = result.filter { favoriteIds.contains($0.id) } }
         if selectedType == "静态壁纸"     { result = result.filter { !$0.isVideo } }
         else if selectedType == "动态壁纸" { result = result.filter { $0.isVideo } }
         if selectedCategory != "全部" {
@@ -266,7 +307,6 @@ class WallpaperViewModel: ObservableObject {
         self.slideshowInterval = savedInterval == 0 ? 3600 : savedInterval
         self.playlistIds = UserDefaults.standard.stringArray(forKey: "playlistIds") ?? []
         self.isSlideshowRandom = UserDefaults.standard.bool(forKey: "isSlideshowRandom")
-        self.favoriteIds = UserDefaults.standard.stringArray(forKey: "favoriteIds") ?? []
         if let fitRaw = UserDefaults.standard.string(forKey: "wallpaperFit"),
            let fit = WallpaperFit(rawValue: fitRaw) { self.wallpaperFit = fit }
         self.targetScreenName = UserDefaults.standard.string(forKey: "targetScreenName") ?? "全部"
@@ -318,6 +358,9 @@ class WallpaperViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        loadPeriodAssignments()
+        setupPeriodTimer()
     }
 
     // MARK: - Meilisearch 搜索
@@ -342,10 +385,8 @@ class WallpaperViewModel: ObservableObject {
                     filters.append("color = \"\(selectedColor)\"")
                 }
 
-                // 电脑壁纸只展示开发者或无 uploadedBy 的公共壁纸
-                if !developerUserId.isEmpty {
-                    filters.append("(uploaded_by = \"\(developerUserId)\" OR uploaded_by NOT EXISTS)")
-                }
+                // 只展示已通过审核或旧数据（无 approval_status 字段）的壁纸
+                filters.append("(approval_status = \"approved\" OR approval_status NOT EXISTS)")
 
                 let response = try await MeilisearchService.shared.search(
                     query: searchText,
@@ -496,23 +537,37 @@ class WallpaperViewModel: ObservableObject {
     func removePendingUpload(id: UUID) { pendingUploads.removeAll { $0.id == id } }
     func clearPendingUploads() { pendingUploads.removeAll() }
 
+    func cancelAllUploads() {
+        uploadTask?.cancel()
+        uploadTask = nil
+        uploadProgress.removeAll()
+        isUploading = false
+        statusMessage = "⏹ 已停止上传"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { if self.statusMessage.hasPrefix("⏹") { self.statusMessage = "" } }
+    }
+
     func executeUpload() {
         guard !pendingUploads.isEmpty else { return }
         statusMessage = "🚀 开始处理 \(pendingUploads.count) 个文件..."
-        Task {
+        isUploading = true
+        uploadTask = Task {
             var newItems: [WallpaperItem] = []
             var successCount = 0
             var skipCount = 0
+            // 遍历开始时的快照，但每项上传前检查是否已被用户从列表移除
             let itemsToUpload = pendingUploads
 
             for (index, pendingItem) in itemsToUpload.enumerated() {
+                guard !Task.isCancelled else { break }
+                // 用户已手动删除该项，直接跳过
+                guard await MainActor.run(resultType: Bool.self, body: { self.pendingUploads.contains(where: { $0.id == pendingItem.id }) }) else { continue }
                 await MainActor.run { self.statusMessage = "正在上传第 \(index + 1)/\(itemsToUpload.count) 个..." }
                 do {
                     let fileData = try Data(contentsOf: pendingItem.url)
                     let hashString = SHA256.hash(data: fileData)
                         .compactMap { String(format: "%02x", $0) }.joined()
 
-                    if self.allWallpapers.contains(where: { $0.id == hashString }) {
+                    if await MainActor.run(resultType: Bool.self, body: { self.allWallpapers.contains(where: { $0.id == hashString }) }) {
                         skipCount += 1
                         await MainActor.run { self.removePendingUpload(id: pendingItem.id) }
                         continue
@@ -532,6 +587,8 @@ class WallpaperViewModel: ObservableObject {
                     let resolution = pendingItem.resolution
                     let color = pendingItem.color
 
+                    // 开发者上传直接通过，普通用户需要审核
+                    let uploadStatus: ApprovalStatus = self.isDeveloper ? .approved : .pending
                     let draft = WallpaperItem(
                         id: hashString,
                         title: displayTitle,
@@ -543,11 +600,12 @@ class WallpaperViewModel: ObservableObject {
                         isVideo: isVideo,
                         fullURL: URL(string: "placeholder://")!,   // 上传后替换
                         uploadedAt: Int(Date().timeIntervalSince1970),
-                        uploadedBy: currentUser?.id
+                        uploadedBy: currentUser?.id,
+                        approvalStatus: uploadStatus
                     )
 
                     await MainActor.run { self.uploadProgress[pendingItem.id] = 0 }
-                    let uploaded = try await OSSUploader.shared.uploadFile(
+                    var uploaded = try await OSSUploader.shared.uploadFile(
                         fileURL: pendingItem.url,
                         fileData: fileData,
                         draft: draft,
@@ -557,18 +615,44 @@ class WallpaperViewModel: ObservableObject {
                     )
                     await MainActor.run { self.uploadProgress.removeValue(forKey: pendingItem.id) }
 
-                    // 视频：截取首帧上传到 thumbnails/
+                    // 视频：截取首帧 + 生成轻量预览片段
                     if isVideo {
                         try? await OSSUploader.shared.uploadVideoThumbnail(
                             videoURL: pendingItem.url,
                             itemId: uploaded.id
                         )
+                        if let previewURLStr = try? await OSSUploader.shared.uploadVideoPreview(
+                            videoURL: pendingItem.url,
+                            itemId: uploaded.id
+                        ) {
+                            uploaded.previewURL = URL(string: previewURLStr)
+                        }
                     }
 
                     try await MeilisearchService.shared.addDocuments([uploaded])
+
+                    // 后台存储图像特征向量，供以图搜图使用
+                    let localURL = pendingItem.url
+                    let uploadedId = uploaded.id
+                    Task.detached(priority: .background) {
+                        guard let vector = try? await ImageFeatureExtractor.extract(from: localURL) else { return }
+                        let dim = vector.count
+                        let savedDim = UserDefaults.standard.integer(forKey: "imageFeatureDimension")
+                        if savedDim != dim {
+                            try? await MeilisearchService.shared.configureVectorSearch(dimension: dim)
+                            UserDefaults.standard.set(dim, forKey: "imageFeatureDimension")
+                        }
+                        try? await MeilisearchService.shared.updateDocumentVector(id: uploadedId, vector: vector)
+                    }
+
                     newItems.append(uploaded)
                     successCount += 1
-                    await MainActor.run { self.removePendingUpload(id: pendingItem.id) }
+                    await MainActor.run {
+                        // 每传完一张立即加入列表，管理界面实时可见
+                        self.allWallpapers = [uploaded] + self.allWallpapers
+                        if !self.isDeveloper { self.userUploads = [uploaded] + self.userUploads }
+                        self.removePendingUpload(id: pendingItem.id)
+                    }
 
                 } catch {
                     await MainActor.run { self.uploadProgress.removeValue(forKey: pendingItem.id) }
@@ -577,12 +661,10 @@ class WallpaperViewModel: ObservableObject {
             }
 
             await MainActor.run {
+                self.isUploading = false
+                self.uploadTask = nil
                 if successCount > 0 {
-                    self.allWallpapers = newItems + self.allWallpapers
-                    // 普通用户上传后同步更新个人上传列表
-                    if !self.isDeveloper {
-                        self.userUploads = newItems + self.userUploads
-                    }
+                    // allWallpapers / userUploads 已在每张上传后实时更新，此处只更新状态
                     self.statusMessage = "✅ 成功上传 \(successCount) 个素材（跳过重复 \(skipCount) 个）"
                 } else {
                     self.statusMessage = skipCount > 0
@@ -625,7 +707,11 @@ class WallpaperViewModel: ObservableObject {
             color: editColor == "全部" ? "" : editColor,
             isVideo: item.isVideo,
             fullURL: item.fullURL,
-            uploadedAt: item.uploadedAt
+            previewURL: item.previewURL,
+            uploadedAt: item.uploadedAt,
+            uploadedBy: item.uploadedBy,
+            approvalStatus: item.approvalStatus,
+            rejectionReason: item.rejectionReason
         )
 
         var newWallpapers = allWallpapers
@@ -651,6 +737,71 @@ class WallpaperViewModel: ObservableObject {
 
     func cancelEdit() { self.editingWallpaper = nil }
 
+    // MARK: - 审核
+
+    func fetchPendingReviews() {
+        guard isDeveloper else { return }
+        isLoadingReview = true
+        Task {
+            do {
+                let items = try await MeilisearchService.shared.getPendingWallpapers()
+                await MainActor.run {
+                    self.pendingReviewItems = items.sorted { $0.uploadedAt > $1.uploadedAt }
+                    self.isLoadingReview = false
+                }
+            } catch {
+                await MainActor.run { self.isLoadingReview = false }
+            }
+        }
+    }
+
+    func approveWallpaper(item: WallpaperItem) {
+        Task {
+            do {
+                try await MeilisearchService.shared.updateApprovalStatus(id: item.id, status: .approved)
+                await MainActor.run {
+                    self.pendingReviewItems.removeAll { $0.id == item.id }
+                    // 同步到 allWallpapers
+                    if let index = self.allWallpapers.firstIndex(where: { $0.id == item.id }) {
+                        var updated = item
+                        updated.approvalStatus = .approved
+                        self.allWallpapers[index] = updated
+                    } else {
+                        var updated = item
+                        updated.approvalStatus = .approved
+                        self.allWallpapers.insert(updated, at: 0)
+                    }
+                    self.statusMessage = "✅ 已通过「\(item.title)」"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        if self.statusMessage.contains("已通过") { self.statusMessage = "" }
+                    }
+                }
+            } catch {
+                await MainActor.run { self.statusMessage = "❌ 操作失败，请检查网络" }
+            }
+        }
+    }
+
+    func rejectWallpaper(item: WallpaperItem, reason: String) {
+        Task {
+            do {
+                try await MeilisearchService.shared.updateApprovalStatus(
+                    id: item.id, status: .rejected,
+                    rejectionReason: reason.isEmpty ? nil : reason
+                )
+                await MainActor.run {
+                    self.pendingReviewItems.removeAll { $0.id == item.id }
+                    self.statusMessage = "🚫 已拒绝「\(item.title)」"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        if self.statusMessage.contains("已拒绝") { self.statusMessage = "" }
+                    }
+                }
+            } catch {
+                await MainActor.run { self.statusMessage = "❌ 操作失败，请检查网络" }
+            }
+        }
+    }
+
     // MARK: - 合集
 
     private func loadCollections() {
@@ -674,6 +825,15 @@ class WallpaperViewModel: ObservableObject {
         statusMessage = "✅ 合集「\(name)」已创建"
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if self.statusMessage.contains("合集") { self.statusMessage = "" }
+        }
+    }
+
+    func renameCollection(id: String, newName: String) {
+        guard let index = collections.firstIndex(where: { $0.id == id }) else { return }
+        collections[index].name = newName
+        saveCollections()
+        if isLoggedIn, let collection = collections.first(where: { $0.id == id }) {
+            Task { try? await AuthService.shared.upsertCollection(collection) }
         }
     }
 
@@ -808,6 +968,7 @@ class WallpaperViewModel: ObservableObject {
                 try await OSSUploader.shared.deleteObject(for: item)
                 if item.isVideo {
                     try? await OSSUploader.shared.deleteThumbnail(itemId: item.id)
+                    try? await OSSUploader.shared.deletePreview(itemId: item.id)
                 }
                 await MainActor.run {
                     self.allWallpapers = newWallpapers
@@ -838,6 +999,7 @@ class WallpaperViewModel: ObservableObject {
                 }
                 await MainActor.run {
                     self.downloadProgress.removeValue(forKey: item.id)
+                    self.cacheVersion += 1
                     self.calculateCacheSize()
                     self.objectWillChange.send()
                 }
@@ -859,7 +1021,6 @@ class WallpaperViewModel: ObservableObject {
 
     func setWallpaper(item: WallpaperItem, isSilent: Bool = false) {
         if downloadProgress[item.id] != nil { return }
-        if !isSilent { DispatchQueue.main.async { self.downloadProgress[item.id] = 0.01 } }
         Task {
             do {
                 // 本地导入的壁纸直接使用文件路径，无需缓存
@@ -869,6 +1030,8 @@ class WallpaperViewModel: ObservableObject {
                 } else {
                     let cachedURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
                     if !FileManager.default.fileExists(atPath: cachedURL.path) {
+                        // 只有真正需要下载时才显示进度圆圈
+                        if !isSilent { await MainActor.run { self.downloadProgress[item.id] = 0.01 } }
                         let tempURL = try await downloadWithProgress(url: item.fullURL, itemId: item.id, isSilent: isSilent)
                         try FileManager.default.moveItem(at: tempURL, to: cachedURL)
                     }
@@ -876,6 +1039,11 @@ class WallpaperViewModel: ObservableObject {
                 }
                 await MainActor.run {
                     self.downloadProgress.removeValue(forKey: item.id)
+                    // 用户手动换壁纸时，停止自动轮播和定时换壁纸
+                    if !isSilent {
+                        if self.isSlideshowEnabled { self.isSlideshowEnabled = false }
+                        if self.isTimedPeriodEnabled { self.isTimedPeriodEnabled = false }
+                    }
                     if item.isVideo {
                         DesktopVideoManager.shared.playVideoOnDesktop(url: localURL, screenName: self.targetScreenName)
                     } else {
@@ -919,17 +1087,6 @@ class WallpaperViewModel: ObservableObject {
         }
     }
 
-    func toggleFavorite(item: WallpaperItem) {
-        if let index = favoriteIds.firstIndex(of: item.id) {
-            favoriteIds.remove(at: index); statusMessage = "已取消收藏"
-        } else {
-            favoriteIds.append(item.id); statusMessage = "❤️ 已加入收藏"
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.statusMessage.contains("收藏") { self.statusMessage = "" }
-        }
-    }
-
     // MARK: - 缓存
 
     func deleteSingleCache(for item: WallpaperItem) {
@@ -942,13 +1099,113 @@ class WallpaperViewModel: ObservableObject {
             return
         }
         try? FileManager.default.removeItem(at: localURL)
+        // 同步删除视频预览缓存，避免孤儿文件导致 calculateCacheSize 数值偏大
+        if item.isVideo {
+            let remotePreview = item.previewURL ?? item.fullURL.ossPreview()
+            let previewPath = WallpaperCacheManager.shared.getPreviewCachePath(for: remotePreview)
+            try? FileManager.default.removeItem(at: previewPath)
+        }
         if let idx = playlistIds.firstIndex(of: item.id) { playlistIds.remove(at: idx) }
+        cacheVersion += 1
         calculateCacheSize()
         objectWillChange.send()
         statusMessage = "🗑️ 已清除该壁纸缓存"
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if self.statusMessage.contains("🗑️") { self.statusMessage = "" }
         }
+    }
+
+    // MARK: - 批量操作
+
+    func toggleBatchSelection(item: WallpaperItem) {
+        if batchSelectedIds.contains(item.id) {
+            batchSelectedIds.remove(item.id)
+        } else {
+            batchSelectedIds.insert(item.id)
+        }
+    }
+
+    func selectAllDownloaded() {
+        let currentPath = UserDefaults.standard.string(forKey: "LastWallpaperPath") ?? ""
+        for item in displayWallpapers {
+            let path = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL).path
+            if path != currentPath { batchSelectedIds.insert(item.id) }
+        }
+    }
+
+    func deleteBatchSelectedCache() {
+        guard !batchSelectedIds.isEmpty else { return }
+        let currentPath = UserDefaults.standard.string(forKey: "LastWallpaperPath") ?? ""
+        var deleted = 0
+        var skipped = 0
+        let ids = batchSelectedIds
+        for id in ids {
+            guard let item = allWallpapers.first(where: { $0.id == id }) else { continue }
+            let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
+            if localURL.path == currentPath { skipped += 1; continue }
+            try? FileManager.default.removeItem(at: localURL)
+            if item.isVideo {
+                let remotePreview = item.previewURL ?? item.fullURL.ossPreview()
+                try? FileManager.default.removeItem(at: WallpaperCacheManager.shared.getPreviewCachePath(for: remotePreview))
+            }
+            if let idx = playlistIds.firstIndex(of: id) { playlistIds.remove(at: idx) }
+            deleted += 1
+        }
+        isBatchSelectMode = false
+        cacheVersion += 1
+        calculateCacheSize()
+        objectWillChange.send()
+        if skipped > 0 {
+            statusMessage = "🗑️ 已删除 \(deleted) 张，跳过 \(skipped) 张（正在使用中）"
+        } else {
+            statusMessage = "🗑️ 已删除 \(deleted) 张缓存"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            if self.statusMessage.contains("🗑️") { self.statusMessage = "" }
+        }
+    }
+
+    // MARK: - 定时换壁纸
+
+    func loadPeriodAssignments() {
+        isTimedPeriodEnabled = UserDefaults.standard.bool(forKey: "isTimedPeriodEnabled")
+        if let data = UserDefaults.standard.data(forKey: "periodWallpaperIds"),
+           let dict = try? JSONDecoder().decode([String: String].self, from: data) {
+            periodWallpaperIds = dict
+        }
+    }
+
+    func savePeriodAssignments() {
+        if let data = try? JSONEncoder().encode(periodWallpaperIds) {
+            UserDefaults.standard.set(data, forKey: "periodWallpaperIds")
+        }
+    }
+
+    func setPeriodWallpaper(period: DayPeriod, itemId: String) {
+        periodWallpaperIds[period.rawValue] = itemId
+    }
+
+    func setupPeriodTimer() {
+        periodTimer?.invalidate()
+        periodTimer = nil
+        guard isTimedPeriodEnabled else { return }
+        // 每 60 秒检查一次是否需要切换
+        let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.checkAndApplyPeriodWallpaper()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        periodTimer = timer
+        // 启动时立即检查一次
+        checkAndApplyPeriodWallpaper()
+    }
+
+    func checkAndApplyPeriodWallpaper() {
+        let current = DayPeriod.current()
+        guard current != lastAppliedPeriod,
+              let itemId = periodWallpaperIds[current.rawValue],
+              let item = allWallpapers.first(where: { $0.id == itemId }) else { return }
+        lastAppliedPeriod = current
+        setWallpaper(item: item, isSilent: true)
     }
 
     func clearCache() {
@@ -964,12 +1221,34 @@ class WallpaperViewModel: ObservableObject {
             }
         }
         playlistIds.removeAll()
+        cacheVersion += 1
         calculateCacheSize()
         objectWillChange.send()
         statusMessage = "✅ 缓存清理完成"
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             if self.statusMessage == "✅ 缓存清理完成" { self.statusMessage = "" }
         }
+    }
+
+    func changeCacheDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "选择"
+        panel.message = "新的壁纸缓存将保存到此文件夹，已有缓存不会自动移动。"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? WallpaperCacheManager.shared.setCacheDirectory(url)
+        cacheDirectoryPath = url.path
+        cacheVersion += 1
+        calculateCacheSize()
+    }
+
+    func resetCacheDirectory() {
+        WallpaperCacheManager.shared.resetToDefaultCacheDirectory()
+        cacheDirectoryPath = WallpaperCacheManager.shared.cacheDirectory.path
+        cacheVersion += 1
+        calculateCacheSize()
     }
 
     func calculateCacheSize() {
@@ -986,6 +1265,51 @@ class WallpaperViewModel: ObservableObject {
         DispatchQueue.main.async {
             self.cacheSizeString = String(format: "%.1f MB", Double(totalSize) / (1024 * 1024))
         }
+    }
+
+    // MARK: - 以图搜图
+
+    func searchByImage(url: URL) {
+        imageSearchQueryImage = NSImage(contentsOf: url)
+        imageSearchResults = []
+        isImageSearching = true
+        imageSearchMode = true
+
+        Task {
+            do {
+                let vector = try await ImageFeatureExtractor.extract(from: url)
+
+                // 首次使用：向 Meilisearch 注册 userProvided 嵌入器
+                let dim = vector.count
+                let savedDim = UserDefaults.standard.integer(forKey: "imageFeatureDimension")
+                if savedDim != dim {
+                    try? await MeilisearchService.shared.configureVectorSearch(dimension: dim)
+                    UserDefaults.standard.set(dim, forKey: "imageFeatureDimension")
+                }
+
+                let results = try await MeilisearchService.shared.vectorSearch(vector: vector, hitsPerPage: 24)
+                await MainActor.run {
+                    imageSearchResults = results
+                    isImageSearching = false
+                }
+            } catch {
+                await MainActor.run {
+                    isImageSearching = false
+                    imageSearchMode = false
+                    statusMessage = "❌ 以图搜图失败，请检查网络连接"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        if self.statusMessage.hasPrefix("❌") { self.statusMessage = "" }
+                    }
+                }
+            }
+        }
+    }
+
+    func clearImageSearch() {
+        imageSearchMode = false
+        imageSearchQueryImage = nil
+        imageSearchResults = []
+        isImageSearching = false
     }
 
     // MARK: - 轮播计时器
@@ -1040,7 +1364,7 @@ class WallpaperViewModel: ObservableObject {
         guard let path = UserDefaults.standard.string(forKey: "LastWallpaperPath") else { return }
         let url = URL(fileURLWithPath: path)
         if FileManager.default.fileExists(atPath: url.path) {
-            if url.pathExtension.lowercased() == "mp4" {
+            if ["mp4", "mov"].contains(url.pathExtension.lowercased()) {
                 DesktopVideoManager.shared.playVideoOnDesktop(url: url)
                 Task { await syncLockScreenWallpaper(for: url) }
             }
