@@ -37,7 +37,11 @@
       "Bash(xargs -I{} sh -c 'echo \"=== {} ===\"; head -50 \"{}\"')",
       "Bash(open \"/Users/tangxiao/Library/Developer/Xcode/DerivedData/PangLouWallpaper-dvxarwrzzjjjxgbpghhvtdjzfmcv/Build/Products/Debug/PangLouWallpaper.app\")",
       "Bash(wait)",
-      "Bash(xargs sed:*)"
+      "Bash(xargs sed:*)",
+      "WebFetch(domain:steamcommunity.com)",
+      "Bash(curl -s -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/605.1.15 \\(KHTML, like Gecko\\) Version/17.0 Safari/605.1.15\" \"https://steamcommunity.com/workshop/browse/render/?appid=431960&section=readytouseitems&numperpage=3&p=1&browsesort=toprated\")",
+      "Bash(grep -v \"^$\")",
+      "Bash(git stash:*)"
     ]
   }
 }

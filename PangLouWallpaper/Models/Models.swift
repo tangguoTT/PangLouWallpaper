@@ -115,6 +115,69 @@ enum AppTab: String {
     case slideshow = "轮播壁纸"
     case collection = "我的合集"
     case upload = "上传壁纸"
+    case steamWorkshop = "Steam Workshop"
+}
+
+// MARK: - Steam Workshop
+
+struct SteamWorkshopItem: Identifiable, Equatable {
+    let id: String           // publishedfileid
+    let title: String
+    let previewURL: URL?
+    var description: String
+    var tags: [String]
+    var fileSize: Int        // bytes, 0 = not yet fetched
+    let timeUpdated: Int
+
+    var isVideo: Bool {
+        tags.contains(where: { $0.lowercased() == "video" })
+    }
+
+    /// Wallpaper Engine type derived from tags
+    var weType: WEType {
+        let low = tags.map { $0.lowercased() }
+        if low.contains("video")   { return .video }
+        if low.contains("scene")   { return .scene }
+        if low.contains("web")     { return .web }
+        if low.contains("preset")  { return .preset }
+        if low.contains("image")   { return .image }
+        return .unknown
+    }
+
+    /// macOS 可直接使用（无需 Wallpaper Engine）
+    var isMacOSCompatible: Bool { weType == .video || weType == .image }
+
+    enum WEType {
+        case video, image, scene, web, preset, unknown
+
+        var displayName: String {
+            switch self {
+            case .video:   return "视频"
+            case .image:   return "图片"
+            case .scene:   return "场景"
+            case .web:     return "网页"
+            case .preset:  return "预设"
+            case .unknown: return "未知"
+            }
+        }
+        var needsWE: Bool { self == .scene || self == .web || self == .preset }
+        var systemImage: String {
+            switch self {
+            case .video:  return "play.circle.fill"
+            case .image:  return "photo.fill"
+            case .scene:  return "cube.fill"
+            case .web:    return "globe"
+            case .preset: return "slider.horizontal.3"
+            case .unknown: return "questionmark.circle"
+            }
+        }
+    }
+}
+
+enum WorkshopDownloadState {
+    case downloading
+    case done(URL)
+    case failed(String)
 }
 
 struct WallpaperCollection: Identifiable, Codable {

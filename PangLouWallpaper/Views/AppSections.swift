@@ -774,14 +774,17 @@ struct WallpaperGridView: View {
         case .downloaded:
             return viewModel.downloadedSubTab == .localImports ? "还没有本地导入的壁纸" : "暂无下载缓存"
         case .slideshow:  return "暂无轮播壁纸，请去已下载中点亮右上角星星添加"
-        case .upload:     return viewModel.uploadMode == .manage ? "暂无壁纸" : ""  // local handled internally
-        case .collection: return "该合集还没有壁纸，去其他标签页点击壁纸右下角书签按钮添加"
+        case .upload:         return viewModel.uploadMode == .manage ? "暂无壁纸" : ""
+        case .collection:     return "该合集还没有壁纸，去其他标签页点击壁纸右下角书签按钮添加"
+        case .steamWorkshop:  return ""
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if viewModel.currentTab == .upload {
+            if viewModel.currentTab == .steamWorkshop {
+                SteamWorkshopView(viewModel: viewModel)
+            } else if viewModel.currentTab == .upload {
                 // ── Segment 选择器 ──
                 HStack {
                     if viewModel.isDeveloper {
@@ -933,7 +936,20 @@ struct WallpaperGridView: View {
                 }
                 .padding(.horizontal, 30)
             } else if viewModel.displayWallpapers.isEmpty {
-                VStack(spacing: 16) { Spacer(); Image(systemName: "tray").font(.system(size: 48)).foregroundColor(.primary.opacity(0.3)); Text(emptyText).font(.system(size: 16, weight: .medium)).foregroundColor(.primary.opacity(0.5)); Spacer() }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 16) {
+                    Spacer()
+                    Image(systemName: "tray").font(.system(size: 48)).foregroundColor(.primary.opacity(0.3))
+                    Text(emptyText).font(.system(size: 16, weight: .medium)).foregroundColor(.primary.opacity(0.5))
+                    if viewModel.currentTab == .pc && !viewModel.isSearching {
+                        Button(action: { viewModel.performSearch() }) {
+                            Label("重新加载", systemImage: "arrow.clockwise")
+                                .font(.system(size: 13, weight: .medium))
+                                .padding(.horizontal, 16).padding(.vertical, 7)
+                                .background(Color.primary.opacity(0.08)).clipShape(Capsule())
+                        }.buttonStyle(.plain)
+                    }
+                    Spacer()
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // 这个大框框会完美占据剩余的屏幕，死死限制住图片的最大膨胀体积
                 VStack(spacing: 15) {
@@ -948,10 +964,14 @@ struct WallpaperGridView: View {
                                     WallpaperCardView(item: items[index], viewModel: viewModel)
                                         .id(items[index].id)
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .clipped()
                                 } else {
                                     // 不足 12 张图时，用透明块填满占位，保证网格阵型绝对不乱！
-                                    Color.clear
+                                    // 用 Rectangle().opacity(0) 代替 Color.clear，避免 macOS 上 Color.clear 可能拦截点击事件的问题
+                                    Rectangle()
+                                        .opacity(0)
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .allowsHitTesting(false)
                                 }
                             }
                         }
@@ -1667,19 +1687,8 @@ struct LocalImportsGridView: View {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 280))], spacing: 16) {
                     ForEach(viewModel.localImports) { item in
-                        ZStack(alignment: .topTrailing) {
-                            WallpaperCardView(item: item, viewModel: viewModel)
-                                .aspectRatio(16/10, contentMode: .fit)
-                            Button(action: { viewModel.deleteLocalImport(item) }) {
-                                Image(systemName: "trash.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(.red)
-                                    .background(Circle().fill(Color.white).padding(2))
-                                    .shadow(radius: 2)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(8)
-                        }
+                        WallpaperCardView(item: item, viewModel: viewModel)
+                            .aspectRatio(16/10, contentMode: .fit)
                     }
                 }
                 .padding(20)
@@ -1696,11 +1705,12 @@ struct SidebarView: View {
     @Binding var showSettings: Bool
 
     private let navItems: [(AppTab, String)] = [
-        (.pc,         "desktopcomputer"),
-        (.downloaded, "square.and.arrow.down"),
-        (.slideshow,  "photo.on.rectangle.angled"),
-        (.collection, "rectangle.stack"),
-        (.upload,     "icloud.and.arrow.up"),
+        (.pc,            "desktopcomputer"),
+        (.downloaded,    "square.and.arrow.down"),
+        (.slideshow,     "photo.on.rectangle.angled"),
+        (.collection,    "rectangle.stack"),
+        (.steamWorkshop, "gamecontroller.fill"),
+        (.upload,        "icloud.and.arrow.up"),
     ]
 
     var body: some View {

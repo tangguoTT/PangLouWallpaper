@@ -28,6 +28,9 @@ private struct CardHoverTracker: NSViewRepresentable {
 
 class CardHoverNSView: NSView {
     var onHover: ((Bool) -> Void)?
+    // mouseExited 时延迟 100ms 再通知，防止点击时鼠标轻微抖动触发 hover=false
+    // 导致按钮在 mouseDown→mouseUp 之间被移出视图树、点击失效
+    private var exitWorkItem: DispatchWorkItem?
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -40,8 +43,24 @@ class CardHoverNSView: NSView {
         ))
     }
 
-    override func mouseEntered(with event: NSEvent) { onHover?(true) }
-    override func mouseExited(with event: NSEvent)  { onHover?(false) }
+    override func mouseEntered(with event: NSEvent) {
+        exitWorkItem?.cancel()
+        exitWorkItem = nil
+        onHover?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        exitWorkItem?.cancel()
+        // 鼠标按下时（click 进行中）延迟 400ms，防止 mouseDown→mouseUp 期间
+        // 按钮被移出视图树导致点击失效；正常离开仍用 100ms 保护
+        let delay: Double = NSEvent.pressedMouseButtons != 0 ? 0.4 : 0.1
+        let work = DispatchWorkItem { [weak self] in
+            self?.exitWorkItem = nil
+            self?.onHover?(false)
+        }
+        exitWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
 
     // 不拦截鼠标点击事件，让下层视图正常响应
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -129,6 +148,9 @@ class VideoLayerView: NSView {
         playerLayer?.player = nil
     }
 
+    // 不拦截鼠标点击事件，让上层 SwiftUI 按钮（删除、设为壁纸等）正常响应
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     // NSViewRepresentable 包装，供 SwiftUI 使用
     struct Representable: NSViewRepresentable {
         let url: URL
@@ -169,6 +191,14 @@ struct AsyncThumbnailView: View {
                         let gen = AVAssetImageGenerator(asset: asset)
                         gen.appliesPreferredTrackTransform = true
                         gen.maximumSize = CGSize(width: 800, height: 500)
+                        // 跳过第一秒，避免抓到视频开头的黑帧
+                        let t1 = CMTime(seconds: 1, preferredTimescale: 600)
+                        gen.requestedTimeToleranceBefore = CMTime(seconds: 2, preferredTimescale: 600)
+                        gen.requestedTimeToleranceAfter  = CMTime(seconds: 2, preferredTimescale: 600)
+                        if let cgImage = try? gen.copyCGImage(at: t1, actualTime: nil) {
+                            return NSImage(cgImage: cgImage, size: .zero)
+                        }
+                        // 回退到第 0 帧
                         guard let cgImage = try? gen.copyCGImage(at: .zero, actualTime: nil) else { return nil }
                         return NSImage(cgImage: cgImage, size: .zero)
                     }.value
@@ -185,12 +215,107 @@ struct AsyncThumbnailView: View {
     }
 }
 
+// MARK: - 悬停操作按钮层
+// 用独立 struct + .overlay(alignment:) 替代 VStack/HStack/Spacer 定位，
+// 解决 `HStack { Spacer; Button }` 导致 trailing 按钮 hit-testing 区域不准确的问题。
+private struct CardHoverOverlay: View {
+    let item: WallpaperItem
+    @ObservedObject var viewModel: WallpaperViewModel
+    let isDownloaded: Bool
+    let centerButtonText: String
+    let isInAnyCollection: Bool
+    let colorScheme: ColorScheme
+
+    private var isLocalImport: Bool { viewModel.downloadedSubTab == .localImports }
+    private var isUploadManage: Bool { viewModel.currentTab == .upload && viewModel.uploadMode == .manage }
+    private var isNormalMode: Bool { viewModel.currentTab != .slideshow && !isUploadManage }
+
+    var body: some View {
+        (colorScheme == .dark ? Color.black : Color.white).opacity(0.3).cornerRadius(12)
+            .overlay(alignment: .center) { centerButtons }
+            .overlay(alignment: .topLeading) { topLeadingButton }
+            .overlay(alignment: .bottomLeading) { bottomLeadingButton }
+            .overlay(alignment: .bottomTrailing) { bottomTrailingButton }
+    }
+
+    @ViewBuilder private var centerButtons: some View {
+        if isUploadManage {
+            Button(action: { withAnimation { viewModel.beginEdit(item: item) } }) {
+                HStack { Image(systemName: "pencil"); Text("修改属性") }
+                    .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                    .padding(.vertical, 8).padding(.horizontal, 20)
+                    .background(Color.blue.opacity(0.8)).clipShape(Capsule()).shadow(radius: 3)
+            }.buttonStyle(.plain)
+        } else if isNormalMode {
+            Button(action: {
+                if viewModel.currentTab == .pc {
+                    guard viewModel.isLoggedIn else { viewModel.showLoginSheet = true; return }
+                    if isDownloaded { viewModel.setWallpaper(item: item) } else { viewModel.downloadWallpaper(item: item) }
+                } else { viewModel.setWallpaper(item: item) }
+            }) {
+                Text(centerButtonText)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(colorScheme == .dark ? .white : .black)
+                    .padding(.vertical, 8).padding(.horizontal, 20)
+                    .background(.ultraThinMaterial).clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.2), lineWidth: 1))
+            }.buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder private var topLeadingButton: some View {
+        if isNormalMode && !isLocalImport && viewModel.currentTab != .pc && viewModel.currentTab != .collection {
+            Button(action: { viewModel.toggleInPlaylist(item: item) }) {
+                Image(systemName: viewModel.playlistIds.contains(item.id) ? "star.fill" : "star")
+                    .font(.system(size: 13))
+                    .foregroundColor(viewModel.playlistIds.contains(item.id) ? .yellow : .white)
+                    .padding(8).background(Color.black.opacity(0.5)).clipShape(Circle())
+            }.buttonStyle(.plain).padding(8)
+        }
+    }
+
+    @ViewBuilder private var bottomLeadingButton: some View {
+        if isNormalMode && !isLocalImport {
+            Button(action: {
+                if viewModel.isLoggedIn { viewModel.addToCollectionTargetItem = item }
+                else { viewModel.showLoginSheet = true }
+            }) {
+                Image(systemName: isInAnyCollection ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 13))
+                    .foregroundColor(isInAnyCollection ? Color(hex: "#C6AC2C") : .white)
+                    .padding(8).background(Color.black.opacity(0.5)).clipShape(Circle())
+            }.buttonStyle(.plain).padding(8)
+        }
+    }
+
+    @ViewBuilder private var bottomTrailingButton: some View {
+        if isUploadManage {
+            Button(action: { viewModel.deleteFromCloud(item: item) }) {
+                Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white)
+                    .padding(8).background(Color.red.opacity(0.8)).clipShape(Circle())
+                    .shadow(color: .black.opacity(0.3), radius: 3, y: 2)
+            }.buttonStyle(.plain).padding(8)
+        } else if viewModel.currentTab == .collection, let colId = viewModel.selectedCollectionId {
+            Button(action: { viewModel.setCoverWallpaper(for: colId, wallpaperId: item.id) }) {
+                Image(systemName: "photo.badge.checkmark").font(.system(size: 12)).foregroundColor(.white)
+                    .padding(8).background(Color.accentColor.opacity(0.85)).clipShape(Circle())
+                    .shadow(color: .black.opacity(0.3), radius: 3, y: 2)
+            }.buttonStyle(.plain).help("设为合集封面").padding(8)
+        } else if viewModel.currentTab == .downloaded {
+            Button(action: { viewModel.deleteConfirmItem = item }) {
+                Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white)
+                    .padding(8).background(Color.red.opacity(0.8)).clipShape(Circle())
+                    .shadow(color: .black.opacity(0.3), radius: 3, y: 2)
+            }.buttonStyle(.plain).padding(8)
+        }
+    }
+}
+
 struct WallpaperCardView: View {
     let item: WallpaperItem
     @ObservedObject var viewModel: WallpaperViewModel
     @State private var isHovered = false
     @State private var isDownloaded = false
-    @State private var showDeleteConfirm = false
     @Environment(\.colorScheme) var colorScheme
 
     private var isCurrentWallpaper: Bool {
@@ -226,10 +351,13 @@ struct WallpaperCardView: View {
 
     var body: some View {
         ZStack {
-            // 预览点击区：悬停时（按钮可见）完全透明不拦截；批量模式下也不拦截（由覆盖层接管）
-            Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = item } }) {
-                Color.clear.contentShape(Rectangle())
-            }.buttonStyle(.plain).allowsHitTesting(!isHovered && !isBatchMode)
+            // 预览点击区：悬停时从视图树彻底移除（不能只用 allowsHitTesting(false)，
+            // 在 macOS 上含 contentShape(Rectangle()) 的 Button 即使禁用仍可能拦截点击）
+            if !isHovered && !isBatchMode {
+                Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = item } }) {
+                    Color.clear.contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
 
             AsyncThumbnailView(item: item)
                 .scaleEffect(isHovered ? 1.06 : 1.0)
@@ -255,6 +383,7 @@ struct WallpaperCardView: View {
                     Spacer()
                 }
                 .opacity(isHovered ? 0 : 1)
+                .allowsHitTesting(false)  // 纯装饰，永远不拦截事件（Color background 会吸收点击）
                 .animation(.easeInOut(duration: 0.18), value: isHovered)
             }
 
@@ -266,55 +395,46 @@ struct WallpaperCardView: View {
                     .cornerRadius(12)
                     .clipped()
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isHovered)
+                    // NSViewRepresentable 在 SwiftUI 手势路由层面是不透明的，
+                    // 即使底层 NSView.hitTest 返回 nil 也会拦截 SwiftUI 手势。
+                    // 视频预览纯展示无需交互，禁用后点击事件正确传递给上层按钮。
+                    .allowsHitTesting(false)
             }
             
             let isDownloading = viewModel.downloadProgress[item.id] != nil
-            
-            if isHovered && !isDownloading {
-                (colorScheme == .dark ? Color.black : Color.white).opacity(0.3).cornerRadius(12)
-                    .overlay(
-                        ZStack {
-                            if viewModel.currentTab == .upload && viewModel.uploadMode == .manage {
-                                Button(action: { withAnimation { viewModel.beginEdit(item: item) } }) {
-                                    HStack { Image(systemName: "pencil"); Text("修改属性") }
-                                        .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                                        .padding(.vertical, 8).padding(.horizontal, 20)
-                                        .background(Color.blue.opacity(0.8)).clipShape(Capsule())
-                                        .shadow(radius: 3)
-                                }.buttonStyle(.plain)
-                                VStack { Spacer(); HStack { Spacer(); Button(action: { viewModel.deleteFromCloud(item: item) }) { Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.red.opacity(0.8)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).padding(8) } }
-                            } else if viewModel.currentTab != .slideshow {
-                                Button(action: {
-                                    if viewModel.currentTab == .pc {
-                                        guard viewModel.isLoggedIn else { viewModel.showLoginSheet = true; return }
-                                        if isDownloaded { viewModel.setWallpaper(item: item) } else { viewModel.downloadWallpaper(item: item) }
-                                    } else { viewModel.setWallpaper(item: item) }
-                                }) {
-                                    Text(centerButtonText).font(.system(size: 13, weight: .bold)).foregroundColor(colorScheme == .dark ? .white : .black).padding(.vertical, 8).padding(.horizontal, 20).background(.ultraThinMaterial).clipShape(Capsule()).overlay(Capsule().stroke(Color.primary.opacity(0.2), lineWidth: 1))
-                                }.buttonStyle(.plain)
 
-                                let isLocalImport = viewModel.downloadedSubTab == .localImports
-
-                                if !isLocalImport && viewModel.currentTab != .pc && viewModel.currentTab != .collection {
-                                    VStack { HStack { Button(action: { viewModel.toggleInPlaylist(item: item) }) { Image(systemName: viewModel.playlistIds.contains(item.id) ? "star.fill" : "star").font(.system(size: 13)).foregroundColor(viewModel.playlistIds.contains(item.id) ? .yellow : .white).padding(8).background(Color.black.opacity(0.5)).clipShape(Circle()) }.buttonStyle(.plain).padding(8); Spacer() }; Spacer() }
-                                }
-
-                                // 加入合集按钮（左下角，本地导入除外）
-                                if !isLocalImport { VStack { Spacer(); HStack { Button(action: { if viewModel.isLoggedIn { viewModel.addToCollectionTargetItem = item } else { viewModel.showLoginSheet = true } }) { Image(systemName: isInAnyCollection ? "bookmark.fill" : "bookmark").font(.system(size: 13)).foregroundColor(isInAnyCollection ? Color(hex: "#C6AC2C") : .white).padding(8).background(Color.black.opacity(0.5)).clipShape(Circle()) }.buttonStyle(.plain).padding(8); Spacer() } } }
-
-                                // 设为封面按钮（右下角，仅合集详情页）
-                                if viewModel.currentTab == .collection, let colId = viewModel.selectedCollectionId {
-                                    VStack { Spacer(); HStack { Spacer(); Button(action: { viewModel.setCoverWallpaper(for: colId, wallpaperId: item.id) }) { Image(systemName: "photo.badge.checkmark").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.accentColor.opacity(0.85)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).help("设为合集封面").padding(8) } }
-                                }
-
-                                if viewModel.currentTab == .downloaded { VStack { Spacer(); HStack { Spacer(); Button(action: { showDeleteConfirm = true }) { Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white).padding(8).background(Color.red.opacity(0.8)).clipShape(Circle()).shadow(color: .black.opacity(0.3), radius: 3, y: 2) }.buttonStyle(.plain).padding(8) } } }
-                            }
-                        }
-                    )
+            // 批量选择模式下不渲染悬停操作层：
+            // 悬停层内的 Button(.plain) 会与外层批量 overlay 的 onTapGesture 竞争手势，
+            // 导致两者都失效（类似 contentShape(Rectangle()) Button 在 macOS 上的已知问题）。
+            if isHovered && !isDownloading && !isBatchMode {
+                CardHoverOverlay(item: item, viewModel: viewModel,
+                                 isDownloaded: isDownloaded,
+                                 centerButtonText: centerButtonText,
+                                 isInAnyCollection: isInAnyCollection,
+                                 colorScheme: colorScheme)
             }
             
             if let progress = viewModel.downloadProgress[item.id] {
-                ZStack { Color.black.opacity(0.6).cornerRadius(12); Circle().stroke(Color.white.opacity(0.2), lineWidth: 4).frame(width: 44, height: 44); Circle().trim(from: 0, to: CGFloat(progress)).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round)).frame(width: 44, height: 44).rotationEffect(.degrees(-90)).animation(.linear(duration: 0.1), value: progress); Text("\(Int(progress * 100))%").font(.system(size: 11, weight: .bold).monospacedDigit()).foregroundColor(.white) }.transition(.opacity).zIndex(10)
+                ZStack {
+                    Color.black.opacity(0.6).cornerRadius(12)
+                    VStack(spacing: 6) {
+                        ZStack {
+                            Circle().stroke(Color.white.opacity(0.2), lineWidth: 4).frame(width: 44, height: 44)
+                            Circle().trim(from: 0, to: CGFloat(progress))
+                                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                                .frame(width: 44, height: 44).rotationEffect(.degrees(-90))
+                                .animation(.linear(duration: 0.1), value: progress)
+                            Text("\(Int(progress * 100))%")
+                                .font(.system(size: 10, weight: .bold).monospacedDigit()).foregroundColor(.white)
+                        }
+                        Button(action: { viewModel.cancelDownload(itemId: item.id) }) {
+                            Text("取消")
+                                .font(.system(size: 10, weight: .medium)).foregroundColor(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 3)
+                                .background(Color.white.opacity(0.2)).clipShape(Capsule())
+                        }.buttonStyle(.plain)
+                    }
+                }.transition(.opacity).zIndex(10)
             }
 
             if viewModel.failedDownloadIds.contains(item.id) {
@@ -355,9 +475,13 @@ struct WallpaperCardView: View {
                             }
                             Spacer()
                         }
+                        // macOS 上 ZStack 透明区域的 onTapGesture 不可靠（右侧死区问题）。
+                        // 与 preview button 保持一致：用 Button + Color.clear.contentShape 作为置顶透明热区，
+                        // 确保整张卡片可点击。
+                        Button(action: { viewModel.toggleBatchSelection(item: item) }) {
+                            Color.clear.contentShape(Rectangle())
+                        }.buttonStyle(.plain)
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture { viewModel.toggleBatchSelection(item: item) }
                 }
             }
         )
@@ -366,22 +490,65 @@ struct WallpaperCardView: View {
         .animation(.easeInOut(duration: 0.1), value: isBatchSelected)
         .background(CardHoverTracker { isHovered = $0 })
         .task(id: "\(item.id)_\(viewModel.cacheVersion)") { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); isDownloaded = FileManager.default.fileExists(atPath: localURL.path) }
-        .confirmationDialog(viewModel.downloadedSubTab == .localImports ? "删除本地导入的壁纸" : "删除壁纸缓存", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("删除", role: .destructive) {
-                if viewModel.downloadedSubTab == .localImports {
-                    viewModel.deleteLocalImport(item)
-                } else {
-                    viewModel.deleteSingleCache(for: item)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            if viewModel.downloadedSubTab == .localImports {
-                Text("「\(item.title.isEmpty ? "该壁纸" : item.title)」将从本地导入列表中移除，原始文件不受影响。")
-            } else {
-                Text("「\(item.title.isEmpty ? "该壁纸" : item.title)」的本地缓存将被删除，可重新下载。")
+    }
+}
+
+// MARK: - 删除确认弹窗（走 ContentView ZStack overlay，与其他弹窗模式一致）
+struct DeleteConfirmView: View {
+    let item: WallpaperItem
+    @ObservedObject var viewModel: WallpaperViewModel
+    @Environment(\.colorScheme) var colorScheme
+
+    private var isLocalImport: Bool { viewModel.downloadedSubTab == .localImports }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "trash.circle.fill")
+                .font(.system(size: 36))
+                .foregroundColor(.red)
+
+            Text(isLocalImport ? "删除本地导入的壁纸" : "删除壁纸缓存")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(.primary)
+
+            Text(isLocalImport
+                ? "「\(item.title.isEmpty ? "该壁纸" : item.title)」将从本地导入列表中移除，原始文件不受影响。"
+                : "「\(item.title.isEmpty ? "该壁纸" : item.title)」的本地缓存将被删除，可重新下载。")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 280)
+
+            HStack(spacing: 12) {
+                Button(action: { viewModel.deleteConfirmItem = nil }) {
+                    Text("取消")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 100, height: 34)
+                        .background(Color.primary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }.buttonStyle(.plain)
+
+                Button(action: {
+                    if isLocalImport {
+                        viewModel.deleteLocalImport(item)
+                    } else {
+                        viewModel.deleteSingleCache(for: item)
+                    }
+                    viewModel.deleteConfirmItem = nil
+                }) {
+                    Text("删除")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 100, height: 34)
+                        .background(Color.red)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }.buttonStyle(.plain)
             }
         }
+        .padding(28)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
     }
 }
 
@@ -553,6 +720,11 @@ struct WallpaperPreviewView: View {
         return t.isEmpty ? item.title : t
     }
 
+    private var fileTypeText: String {
+        let ext = item.fullURL.pathExtension.lowercased()
+        return ext.isEmpty ? "未知格式" : ext.uppercased()
+    }
+
     private var parsedTags: [String] {
         var tags: [String] = [item.isVideo ? "动态壁纸" : "静态壁纸"]
         var t = item.title
@@ -566,6 +738,7 @@ struct WallpaperPreviewView: View {
     }
 
     @State private var keyMonitor: Any?
+    @State private var fileSizeText: String = ""
 
     private var prevItem: WallpaperItem? { viewModel.adjacentPreviewItems().prev }
     private var nextItem: WallpaperItem? { viewModel.adjacentPreviewItems().next }
@@ -623,7 +796,7 @@ struct WallpaperPreviewView: View {
                 if let progress = viewModel.downloadProgress[item.id] {
                     ZStack {
                         Color.black.opacity(0.6)
-                        VStack(spacing: 8) {
+                        VStack(spacing: 10) {
                             ZStack {
                                 Circle().stroke(Color.white.opacity(0.2), lineWidth: 4).frame(width: 52, height: 52)
                                 Circle().trim(from: 0, to: CGFloat(progress))
@@ -633,6 +806,12 @@ struct WallpaperPreviewView: View {
                             }
                             Text("\(Int(progress * 100))%")
                                 .font(.system(size: 14, weight: .bold).monospacedDigit()).foregroundColor(.white)
+                            Button(action: { viewModel.cancelDownload(itemId: item.id) }) {
+                                Text("取消")
+                                    .font(.system(size: 12, weight: .medium)).foregroundColor(.white)
+                                    .padding(.horizontal, 16).padding(.vertical, 5)
+                                    .background(Color.white.opacity(0.2)).clipShape(Capsule())
+                            }.buttonStyle(.plain)
                         }
                     }
                 }
@@ -661,6 +840,16 @@ struct WallpaperPreviewView: View {
                 HStack(spacing: 6) {
                     ForEach(parsedTags, id: \.self) { tag in
                         Text(tag)
+                            .font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.07)).clipShape(Capsule())
+                    }
+                    Text(fileTypeText)
+                        .font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.07)).clipShape(Capsule())
+                    if !fileSizeText.isEmpty {
+                        Text(fileSizeText)
                             .font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(Color.primary.opacity(0.07)).clipShape(Capsule())
@@ -748,6 +937,9 @@ struct WallpaperPreviewView: View {
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
         .frame(width: 560)
+        .task(id: item.id) {
+            await fetchFileSize()
+        }
         .onAppear {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 switch event.keyCode {
@@ -780,6 +972,33 @@ struct WallpaperPreviewView: View {
         .onDisappear {
             if let monitor = keyMonitor { NSEvent.removeMonitor(monitor); keyMonitor = nil }
         }
+    }
+
+    private func fetchFileSize() async {
+        let localPath = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
+        if FileManager.default.fileExists(atPath: localPath.path),
+           let attrs = try? FileManager.default.attributesOfItem(atPath: localPath.path),
+           let size = attrs[.size] as? Int64 {
+            fileSizeText = formatFileSize(size)
+            return
+        }
+        guard !item.fullURL.isFileURL else { fileSizeText = ""; return }
+        var request = URLRequest(url: item.fullURL)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 8
+        if let (_, response) = try? await URLSession.shared.data(for: request),
+           let http = response as? HTTPURLResponse,
+           let lenStr = http.allHeaderFields["Content-Length"] as? String,
+           let size = Int64(lenStr) {
+            fileSizeText = formatFileSize(size)
+        }
+    }
+
+    private func formatFileSize(_ bytes: Int64) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        if bytes < 1024 * 1024 { return String(format: "%.1f KB", Double(bytes) / 1024) }
+        if bytes < 1024 * 1024 * 1024 { return String(format: "%.1f MB", Double(bytes) / (1024 * 1024)) }
+        return String(format: "%.1f GB", Double(bytes) / (1024 * 1024 * 1024))
     }
 }
 

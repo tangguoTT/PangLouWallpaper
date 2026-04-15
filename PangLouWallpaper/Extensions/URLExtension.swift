@@ -27,6 +27,21 @@ extension URL {
         }
     }
 
+    /// Steam CDN 图片尺寸参数替换（images.steamusercontent.com 支持 imw/imh 缩放）
+    func steamPreview(width: Int, height: Int) -> URL {
+        guard var comps = URLComponents(url: self, resolvingAgainstBaseURL: false) else { return self }
+        var items = (comps.queryItems ?? []).filter {
+            !["imw", "imh", "ima", "impolicy", "imcolor", "letterbox"].contains($0.name)
+        }
+        items += [
+            URLQueryItem(name: "imw", value: "\(width)"),
+            URLQueryItem(name: "imh", value: "\(height)"),
+            URLQueryItem(name: "ima", value: "fit"),
+        ]
+        comps.queryItems = items
+        return comps.url ?? self
+    }
+
     /// 轻量预览片段路径：previews/{id}.mp4
     func ossPreview() -> URL {
         let base = self.absoluteString

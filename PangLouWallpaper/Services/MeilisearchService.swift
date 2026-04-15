@@ -24,6 +24,8 @@ class MeilisearchService {
     private let apiKey: String
     private let indexName = "wallpapers"
 
+    var currentHost: String { host }
+
     private init() {
         guard
             let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
@@ -233,7 +235,7 @@ class MeilisearchService {
         guard let http = response as? HTTPURLResponse else { return }
         if http.statusCode >= 400 {
             let body = String(data: data, encoding: .utf8) ?? "(empty)"
-            print("❌ Meilisearch error \(http.statusCode): \(body)")
+            print("❌ Meilisearch error \(http.statusCode) [\(http.url?.absoluteString ?? "?")]: \(body)")
             throw URLError(.badServerResponse)
         }
     }

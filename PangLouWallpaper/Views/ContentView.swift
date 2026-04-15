@@ -34,6 +34,7 @@ struct ContentView: View {
                     } else {
                         let hideSearchBar = (viewModel.currentTab == .upload && viewModel.uploadMode == .pending)
                             || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
+                            || viewModel.currentTab == .steamWorkshop
                         let hideBottomBar = hideSearchBar
 
                         VStack(spacing: 0) {
@@ -74,7 +75,8 @@ struct ContentView: View {
                 .disabled(
                     viewModel.showLoginSheet || viewModel.showAbout ||
                     viewModel.showUserSpace || viewModel.previewItem != nil ||
-                    viewModel.editingWallpaper != nil || viewModel.addToCollectionTargetItem != nil
+                    viewModel.editingWallpaper != nil || viewModel.addToCollectionTargetItem != nil ||
+                    viewModel.deleteConfirmItem != nil
                 )
             }
 
@@ -128,7 +130,7 @@ struct ContentView: View {
                 Color.black.opacity(0.5).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { viewModel.cancelEdit() }
-                    
+
                 VStack {
                     Spacer()
                     EditWallpaperPopupView(viewModel: viewModel)
@@ -136,6 +138,21 @@ struct ContentView: View {
                     Spacer()
                 }
                 .zIndex(100)
+            }
+
+            if let item = viewModel.deleteConfirmItem {
+                Color.black.opacity(0.4).ignoresSafeArea()
+                    .allowsHitTesting(true)
+                    .onTapGesture { viewModel.deleteConfirmItem = nil }
+                    .zIndex(100)
+
+                VStack {
+                    Spacer()
+                    DeleteConfirmView(item: item, viewModel: viewModel)
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                    Spacer()
+                }
+                .zIndex(101)
             }
 
             if viewModel.showUserSpace {

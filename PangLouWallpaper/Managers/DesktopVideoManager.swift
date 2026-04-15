@@ -11,6 +11,30 @@ import AppKit
 import AVFoundation
 import AVKit
 
+// AVPlayerView.videoGravity 在 macOS 新版本上不可靠，改用 AVPlayerLayer 直接控制填充
+private class VideoFillView: NSView {
+    private let playerLayer: AVPlayerLayer
+
+    init(player: AVPlayer) {
+        self.playerLayer = AVPlayerLayer(player: player)
+        super.init(frame: .zero)
+        wantsLayer = true
+        playerLayer.videoGravity = .resizeAspectFill
+        playerLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        layer?.addSublayer(playerLayer)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playerLayer.frame = bounds
+        CATransaction.commit()
+    }
+}
+
 class DesktopVideoManager: NSObject {
     static let shared = DesktopVideoManager()
 
@@ -184,12 +208,9 @@ class DesktopVideoManager: NSObject {
         // AVPlayerLooper 负责无缝循环，不再需要手动监听播完通知
         let looper = AVPlayerLooper(player: player, templateItem: templateItem)
 
-        // ── 播放视图 ──
-        let playerView = AVPlayerView()
-        playerView.player = player
-        playerView.controlsStyle = .none
-        playerView.videoGravity = .resizeAspectFill
-        window.contentView = playerView
+        // ── 播放视图（AVPlayerLayer 直接填充，比 AVPlayerView.videoGravity 更可靠）──
+        let videoView = VideoFillView(player: player)
+        window.contentView = videoView
 
         return ScreenPlayer(window: window, player: player, looper: looper)
     }
