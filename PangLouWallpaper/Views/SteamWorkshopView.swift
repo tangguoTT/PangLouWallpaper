@@ -81,53 +81,90 @@ struct SteamWorkshopView: View {
     }
 }
 
-// MARK: - Search Bar
+// MARK: - Search & Filter Bar (全新现代化的头部与筛选)
 
 struct WorkshopSearchBar: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @AppStorage("isDarkMode") private var isDarkMode: Bool = true
+    
+    let filters = [
+        ("全部", "全部类型"),
+        ("Video", "视频壁纸"),
+        ("Scene", "场景壁纸"),
+        ("Web", "网页壁纸"),
+        ("Image", "静态图片")
+    ]
 
     var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 14))
-                TextField("搜索 Wallpaper Engine Workshop…", text: $viewModel.workshopSearchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .onSubmit {
-                        viewModel.workshopCurrentPage = 0
-                        viewModel.fetchWorkshopItems()
+        VStack(spacing: 16) {
+            // 搜索框层
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 14))
+                    TextField("搜索 Wallpaper Engine 创意工坊…", text: $viewModel.workshopSearchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .onSubmit {
+                            viewModel.workshopCurrentPage = 0
+                            viewModel.workshopSteamCursor = 0
+                            viewModel.workshopDisplayPageSteamStart = [:]
+                            viewModel.fetchWorkshopItems()
+                        }
+                    if !viewModel.workshopSearchText.isEmpty {
+                        Button(action: {
+                            viewModel.workshopSearchText = ""
+                            viewModel.workshopCurrentPage = 0
+                            viewModel.workshopSteamCursor = 0
+                            viewModel.workshopDisplayPageSteamStart = [:]
+                            viewModel.fetchWorkshopItems()
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 13))
+                        }.buttonStyle(.plain)
                     }
-                if !viewModel.workshopSearchText.isEmpty {
-                    Button(action: {
-                        viewModel.workshopSearchText = ""
-                        viewModel.workshopCurrentPage = 0
-                        viewModel.fetchWorkshopItems()
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 13))
-                    }.buttonStyle(.plain)
                 }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isDarkMode ? Color.white.opacity(0.07) : Color.black.opacity(0.06))
-            .cornerRadius(10)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
+                .cornerRadius(12)
 
-            Button(action: {
-                viewModel.workshopCurrentPage = 0
-                viewModel.fetchWorkshopItems()
-            }) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.primary.opacity(0.7))
-                    .frame(width: 32, height: 32)
-                    .background(isDarkMode ? Color.white.opacity(0.07) : Color.black.opacity(0.06))
-                    .cornerRadius(8)
-            }.buttonStyle(.plain)
+                Button(action: {
+                    viewModel.workshopCurrentPage = 0
+                    viewModel.fetchWorkshopItems()
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.primary.opacity(0.7))
+                        .frame(width: 36, height: 36)
+                        .background(isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
+                        .cornerRadius(10)
+                }.buttonStyle(.plain)
+            }
+            
+            // 筛选器层
+            HStack {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(filters, id: \.0) { tag, name in
+                            Button(action: {
+                                viewModel.workshopSelectedType = tag
+                            }) {
+                                Text(name)
+                                    .font(.system(size: 13, weight: viewModel.workshopSelectedType == tag ? .bold : .medium))
+                                    .foregroundColor(viewModel.workshopSelectedType == tag ? .white : .primary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 7)
+                                    .background(viewModel.workshopSelectedType == tag ? Color.accentColor : Color.primary.opacity(0.06))
+                                    .clipShape(Capsule())
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+                Spacer()
+            }
         }
     }
 }
@@ -183,7 +220,7 @@ struct WorkshopGridView: View {
     }
 }
 
-// MARK: - Item Card
+// MARK: - Item Card (全新现代化毛玻璃卡片)
 
 struct WorkshopItemCard: View {
     let item: SteamWorkshopItem
@@ -196,40 +233,38 @@ struct WorkshopItemCard: View {
 
     var body: some View {
         ZStack {
-            // Background image — fills the whole cell (Color-based layout, never grows from pixel dims)
+            // 背景图片
             WorkshopCachedImage(url: item.previewURL)
 
-            // Bottom gradient + title (always visible)
+            // 现代化毛玻璃底部
             VStack(spacing: 0) {
                 Spacer()
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.72)],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(height: 56)
-                .overlay(alignment: .bottomLeading) {
+                HStack {
                     Text(item.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
                         .lineLimit(1)
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, 7)
+                    Spacer()
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial)
             }
 
-            // Type badge (top-right) — shown when tags are loaded
+            // Type badge (top-right)
             if item.weType != .unknown || !item.tags.isEmpty {
                 VStack {
                     HStack {
                         Spacer()
                         let wt = item.weType
                         Label(wt.displayName, systemImage: wt.systemImage)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(wt.needsWE ? Color.orange.opacity(0.85) : Color.black.opacity(0.6))
-                            .cornerRadius(6)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(wt.needsWE ? Color.orange.opacity(0.9) : Color.accentColor.opacity(0.9))
+                            .clipShape(Capsule())
                             .padding(8)
+                            .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
                     }
                     Spacer()
                 }
@@ -241,8 +276,8 @@ struct WorkshopItemCard: View {
                 downloadButton
             }
         }
-        .cornerRadius(12)
-        .clipped()
+        .cornerRadius(14)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .scaleEffect(isHovered ? 1.03 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isHovered)
         .onHover { isHovered = $0 }
@@ -273,22 +308,7 @@ struct WorkshopItemCard: View {
             }.buttonStyle(.plain)
 
         case .downloading:
-            VStack(spacing: 6) {
-                if let pct = viewModel.workshopDownloadProgress[item.id], pct > 0 {
-                    Text("\(Int(pct * 100))%")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                    ProgressView(value: pct)
-                        .progressViewStyle(.linear)
-                        .tint(.white)
-                        .frame(width: 90)
-                } else {
-                    ProgressView().progressViewStyle(.circular).scaleEffect(0.8).tint(.white)
-                }
-                Text("下载中…")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.8))
-            }
+            WorkshopCardDownloadView(itemId: item.id, viewModel: viewModel)
 
         case .failed:
             VStack(spacing: 8) {
@@ -490,7 +510,6 @@ struct WorkshopPreviewOverlay: View {
         }
     }
 
-    // Human-readable title for the failed state
     private func failedTitle(reason: String) -> String {
         if reason.contains("scene") || reason.contains("web") || reason.contains("preset") {
             return "此壁纸类型需要 Wallpaper Engine，macOS 不支持"
@@ -532,7 +551,8 @@ struct WorkshopPreviewOverlay: View {
             }.buttonStyle(.plain)
 
         case .downloading:
-            WorkshopDownloadProgressView(itemId: item.id, viewModel: viewModel)
+            // ⚠️ 这里更新了传参：传入整个 item 以支持体积读取
+            WorkshopDownloadProgressView(item: item, viewModel: viewModel)
 
         case .failed(let reason):
             VStack(alignment: .leading, spacing: 10) {
@@ -543,7 +563,6 @@ struct WorkshopPreviewOverlay: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.orange)
                 }
-                // Show SteamCMD raw output only for unexpected errors (helps diagnose)
                 if isUnexpectedFailure(reason: reason) {
                     Text(reason)
                         .font(.system(size: 10))
@@ -793,7 +812,6 @@ struct SteamLoginSheet: View {
                 .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 10)
         )
         .onAppear {
-            // Pre-fill saved credentials (username persisted to UserDefaults; password held in ViewModel for Guard flow)
             username = UserDefaults.standard.string(forKey: "steamUsername") ?? ""
             if password.isEmpty { password = viewModel.workshopLoginSavedPassword }
         }
@@ -806,10 +824,7 @@ struct SteamLoginSheet: View {
     }
 }
 
-// MARK: - Cached Thumbnail Image
-// Uses Color as the layout base (fills parent without being influenced by image pixel size),
-// with the image in an overlay — the same pattern as AsyncThumbnailView in the PC grid.
-// Tap the failed state to retry loading.
+// MARK: - Cached Thumbnail Image (防止卡片图片热区溢出的全新组件)
 
 struct WorkshopCachedImage: View {
     let url: URL?
@@ -818,7 +833,6 @@ struct WorkshopCachedImage: View {
     @State private var retryCount = 0
 
     var body: some View {
-        // Color fills whatever space the parent offers — it never grows due to image dimensions.
         Color.primary.opacity(0.06)
             .overlay {
                 if let image {
@@ -834,26 +848,21 @@ struct WorkshopCachedImage: View {
                 }
             }
             .clipped()
-            .contentShape(Rectangle())
+            .contentShape(Rectangle()) // ⬅️ 防止溢出遮挡导致死区的关键代码
             .onTapGesture { if failed { retryCount += 1 } }
-            // task re-runs when URL changes (view reused for a different item on page change)
-            // or when retryCount changes (manual retry tap). Always call load() — it resets state.
             .task(id: "\(url?.absoluteString ?? "")|\(retryCount)") {
                 await load()
             }
     }
 
     private func load() async {
-        // Reset stale state so the new URL's image is shown, not a previous page's leftover.
         image = nil
         failed = false
         guard let url else { failed = true; return }
         let key = url.absoluteString as NSString
-        // 1. Memory cache hit (instant, no flicker for already-seen thumbnails)
         if let cached = SteamWorkshopService.imageMemCache.object(forKey: key) {
             image = cached; return
         }
-        // 2. URLCache / network — retry once on failure
         var request = URLRequest(url: url)
         request.setValue(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
@@ -870,7 +879,9 @@ struct WorkshopCachedImage: View {
                     if attempt == 0 { try? await Task.sleep(nanoseconds: 800_000_000); continue }
                     failed = true; return
                 }
-                SteamWorkshopService.imageMemCache.setObject(img, forKey: key)
+                // cost = 解码后的像素字节数，让 totalCostLimit 生效
+                let cost = Int(img.size.width * img.size.height) * 4
+                SteamWorkshopService.imageMemCache.setObject(img, forKey: key, cost: cost)
                 image = img
                 return
             } catch {
@@ -881,35 +892,90 @@ struct WorkshopCachedImage: View {
     }
 }
 
-// MARK: - Download Progress View (shown in preview overlay while SteamCMD runs)
+// MARK: - Card Downloading View (磁盘字节实时进度，用于卡片 hover 状态)
+
+struct WorkshopCardDownloadView: View {
+    let itemId: String
+    @ObservedObject var viewModel: WallpaperViewModel
+    @State private var diskBytes: Int64 = 0
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if let pct = viewModel.workshopDownloadProgress[itemId], pct > 0 {
+                Text("\(Int(pct * 100))%")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                ProgressView(value: pct)
+                    .progressViewStyle(.linear)
+                    .tint(.white)
+                    .frame(width: 90)
+            } else if diskBytes > 0 {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(.white)
+                    .frame(width: 90)
+                Text(formattedBytes(diskBytes))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.9))
+            } else {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .scaleEffect(0.8)
+                    .tint(.white)
+            }
+            Text("下载中…")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.8))
+        }
+        .task {
+            while !Task.isCancelled {
+                let bytes = SteamWorkshopService.totalDownloadedBytes(itemId: itemId)
+                if bytes > diskBytes { await MainActor.run { diskBytes = bytes } }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+    }
+
+    private func formattedBytes(_ b: Int64) -> String {
+        let mb = Double(b) / (1024 * 1024)
+        if mb >= 1 { return String(format: "%.1f MB", mb) }
+        return String(format: "%.0f KB", Double(b) / 1024)
+    }
+}
+
+// MARK: - Download Progress View (解决看不见进度的终极方案)
 
 struct WorkshopDownloadProgressView: View {
-    let itemId: String
+    let item: SteamWorkshopItem
     @ObservedObject var viewModel: WallpaperViewModel
     @State private var elapsed: Int = 0
     @State private var downloadedBytes: Int64 = 0
     @State private var timer: Timer? = nil
 
-    private var progress: Double? {
-        guard let p = viewModel.workshopDownloadProgress[itemId], p > 0 else { return nil }
-        return p
+    private var totalBytes: Int64 {
+        // 1. SteamCMD 实时上报的精确大小
+        if let t = viewModel.workshopTotalBytes[item.id], t > 0 { return t }
+        // 2. workshopItems 中的最新 fileSize（fetchItemDetails 异步回填，item 是值类型副本可能已过期）
+        let liveSize = viewModel.workshopItems.first(where: { $0.id == item.id })?.fileSize ?? 0
+        if liveSize > 0 { return Int64(liveSize) }
+        // 3. 降级：使用 item 自带的 fileSize（可能为 0）
+        return Int64(item.fileSize)
     }
 
-    private var totalBytes: Int64? { viewModel.workshopTotalBytes[itemId] }
+    private var calculatedProgress: Double? {
+        // 1. 如果 SteamCMD 有正常打印进度，直接用
+        if let p = viewModel.workshopDownloadProgress[item.id], p > 0 { return p }
+        // 2. 核心后备方案：通过硬盘文件大小 / API告诉的总大小 自己算进度！
+        let total = totalBytes
+        if total > 0 && downloadedBytes > 0 {
+            return min(1.0, Double(downloadedBytes) / Double(total))
+        }
+        return nil
+    }
 
     private var elapsedText: String {
         if elapsed < 60 { return "\(elapsed) 秒" }
         return "\(elapsed / 60) 分 \(elapsed % 60) 秒"
-    }
-
-    private var tipText: String {
-        switch elapsed {
-        case 0..<12:   return "正在连接 Steam 服务器…"
-        case 12..<35:  return "正在登录并准备下载…"
-        case 35..<90:  return "正在从 Steam CDN 下载…"
-        case 90..<180: return "大文件下载需要几分钟，请勿关闭应用"
-        default:       return "仍在下载中，请勿关闭应用"
-        }
     }
 
     private func formattedBytes(_ b: Int64) -> String {
@@ -920,8 +986,8 @@ struct WorkshopDownloadProgressView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let pct = progress {
-                // 确定进度 — SteamCMD 报告了百分比
+            if let pct = calculatedProgress {
+                // 完美显示进度条
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("正在下载")
@@ -936,19 +1002,12 @@ struct WorkshopDownloadProgressView: View {
                         .tint(.accentColor)
                         .frame(width: 240)
                     HStack {
-                        // 优先显示 "已下载 / 总大小"，无总大小时只显示已下载
-                        if downloadedBytes > 0 {
-                            if let total = totalBytes, total > downloadedBytes {
-                                Text("\(formattedBytes(downloadedBytes)) / \(formattedBytes(total))")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text("已下载 \(formattedBytes(downloadedBytes))")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                        } else if let total = totalBytes {
-                            Text("共 \(formattedBytes(total))")
+                        if totalBytes > 0 {
+                            Text("\(formattedBytes(downloadedBytes)) / \(formattedBytes(totalBytes))")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("已下载 \(formattedBytes(downloadedBytes))")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }
@@ -958,34 +1017,36 @@ struct WorkshopDownloadProgressView: View {
                             .foregroundColor(.secondary)
                     }
                 }
+            } else if downloadedBytes > 0 {
+                // 已有磁盘写入但不知道总大小时，显示不定式进度条 + 已下载量
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("正在下载")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Text("已用时 \(elapsedText)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .tint(.accentColor)
+                        .frame(width: 240)
+                    Text("已下载 \(formattedBytes(downloadedBytes))（总大小未知）")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
             } else {
-                // 不确定进度 — 等待 SteamCMD 开始报告
+                // 下载刚刚开始，尚无任何磁盘写入
                 HStack(spacing: 10) {
                     ProgressView().progressViewStyle(.circular).scaleEffect(0.85)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(tipText)
+                        Text("正在建立 Steam 链接…")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.primary)
-                        HStack(spacing: 10) {
-                            if downloadedBytes > 0 {
-                                if let total = totalBytes, total > downloadedBytes {
-                                    Text("\(formattedBytes(downloadedBytes)) / \(formattedBytes(total))")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.accentColor)
-                                } else {
-                                    Text("已下载 \(formattedBytes(downloadedBytes))")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.accentColor)
-                                }
-                            } else if let total = totalBytes {
-                                Text("共 \(formattedBytes(total))")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            Text("已用时 \(elapsedText)")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
+                        Text("已用时 \(elapsedText)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -996,17 +1057,17 @@ struct WorkshopDownloadProgressView: View {
     }
 
     private func startTimer() {
-        if let start = viewModel.workshopDownloadStartTime[itemId] {
+        if let start = viewModel.workshopDownloadStartTime[item.id] {
             elapsed = Int(Date().timeIntervalSince(start))
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            if let start = viewModel.workshopDownloadStartTime[itemId] {
+        // 每 0.5 秒查一次本地临时文件夹写入了多少
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            if let start = viewModel.workshopDownloadStartTime[item.id] {
                 elapsed = Int(Date().timeIntervalSince(start))
             } else {
                 elapsed += 1
             }
-            // Poll filesystem for bytes written so far (works even without SteamCMD progress output)
-            let bytes = SteamWorkshopService.totalDownloadedBytes(itemId: itemId)
+            let bytes = SteamWorkshopService.totalDownloadedBytes(itemId: item.id)
             if bytes > downloadedBytes { downloadedBytes = bytes }
         }
         RunLoop.main.add(timer!, forMode: .common)

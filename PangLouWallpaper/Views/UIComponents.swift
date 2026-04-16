@@ -184,6 +184,7 @@ struct AsyncThumbnailView: View {
                 }
             )
             .clipped()
+            .contentShape(Rectangle())
             .task(id: item.fullURL) {
                 if item.fullURL.isFileURL && item.isVideo {
                     thumbnail = await Task.detached(priority: .utility) {
@@ -364,6 +365,7 @@ struct WallpaperCardView: View {
                 .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isHovered)
                 .cornerRadius(12)
                 .clipped()
+                .contentShape(Rectangle())
 
             // 整体随悬停淡出
 
@@ -394,6 +396,7 @@ struct WallpaperCardView: View {
                     .scaleEffect(isHovered ? 1.06 : 1.0)
                     .cornerRadius(12)
                     .clipped()
+                    .contentShape(Rectangle())
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isHovered)
                     // NSViewRepresentable 在 SwiftUI 手势路由层面是不透明的，
                     // 即使底层 NSView.hitTest 返回 nil 也会拦截 SwiftUI 手势。

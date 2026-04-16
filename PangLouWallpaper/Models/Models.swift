@@ -145,7 +145,7 @@ struct SteamWorkshopItem: Identifiable, Equatable {
     }
 
     /// macOS 可直接使用（无需 Wallpaper Engine）
-    var isMacOSCompatible: Bool { weType == .video || weType == .image }
+    var isMacOSCompatible: Bool { weType == .video || weType == .image || weType == .web }
 
     enum WEType {
         case video, image, scene, web, preset, unknown
@@ -160,7 +160,7 @@ struct SteamWorkshopItem: Identifiable, Equatable {
             case .unknown: return "未知"
             }
         }
-        var needsWE: Bool { self == .scene || self == .web || self == .preset }
+        var needsWE: Bool { self == .scene || self == .preset }
         var systemImage: String {
             switch self {
             case .video:  return "play.circle.fill"

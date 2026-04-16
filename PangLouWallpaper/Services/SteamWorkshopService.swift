@@ -26,10 +26,10 @@ class SteamWorkshopService: NSObject {
         return URLSession(configuration: config)
     }()
 
-    /// Session for thumbnail images — larger cache, return cached data immediately
+    /// Session for thumbnail images — NSImage 已有内存缓存，HTTP 层只保留磁盘缓存
     static let thumbnailSession: URLSession = {
-        let cache = URLCache(memoryCapacity: 50 * 1024 * 1024,
-                             diskCapacity:  200 * 1024 * 1024)
+        let cache = URLCache(memoryCapacity:   4 * 1024 * 1024,   // 4MB（压缩数据，仅临时）
+                             diskCapacity:   200 * 1024 * 1024)
         let config = URLSessionConfiguration.default
         config.urlCache = cache
         config.requestCachePolicy = .returnCacheDataElseLoad
@@ -38,8 +38,13 @@ class SteamWorkshopService: NSObject {
         return URLSession(configuration: config)
     }()
 
-    /// In-memory image cache (NSCache auto-evicts under memory pressure)
-    static let imageMemCache = NSCache<NSString, NSImage>()
+    /// In-memory image cache — 限制 100 张 / 80MB，防止长时间浏览导致内存暴涨
+    static let imageMemCache: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 100
+        c.totalCostLimit = 80 * 1024 * 1024   // 80 MB（cost 按解码像素字节数计）
+        return c
+    }()
 
     // MARK: - Page result cache (5-min TTL)
 
@@ -56,6 +61,8 @@ class SteamWorkshopService: NSObject {
     /// Fetches Workshop items by scraping Steam's public render endpoint.
     /// Returns hasMore=true when the page is full (can't know actual total from HTML).
     /// Results are cached in memory for 5 minutes to avoid redundant requests.
+    /// Steam render endpoint 不稳定支持服务端 tag 过滤，故此处只按 query+page 抓取原始结果。
+    /// 类型筛选（Video/Scene/Web/Image）在 enrichment 完成后由调用方做客户端过滤。
     func fetchViaRSS(query: String, page: Int, perPage: Int = 20) async throws -> (items: [SteamWorkshopItem], hasMore: Bool) {
         let cacheKey = "\(query)|\(page)"
         if let cached = pageCache[cacheKey], Date().timeIntervalSince(cached.date) < pageCacheTTL {
@@ -75,7 +82,6 @@ class SteamWorkshopService: NSObject {
             params.append(URLQueryItem(name: "searchtext", value: query))
         }
         components.queryItems = params
-
         guard let url = components.url else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
@@ -279,7 +285,7 @@ class SteamWorkshopService: NSObject {
 
     enum WallpaperEngineType: String {
         case video, image, scene, web, preset, unknown
-        var isSupported: Bool { self == .video || self == .image }
+        var isSupported: Bool { self == .video || self == .image || self == .web }
     }
 
     /// Reads project.json and returns the wallpaper type (video/image/scene/web/…).
@@ -299,7 +305,7 @@ class SteamWorkshopService: NSObject {
     ///
     /// Returns `nil` if the wallpaper type is scene/web/preset (requires Wallpaper Engine to render).
     static func findWallpaperFile(in directory: URL) -> URL? {
-        let supportedExts: Set<String> = ["mp4", "webm", "mov", "jpg", "jpeg", "png", "gif"]
+        let supportedExts: Set<String> = ["mp4", "webm", "mov", "jpg", "jpeg", "png", "gif", "html", "htm"]
 
         // --- Step 1: parse project.json ---
         let projectURL = directory.appendingPathComponent("project.json")

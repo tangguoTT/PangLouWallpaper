@@ -19,7 +19,24 @@ enum UploadMode: String {
 class WallpaperViewModel: ObservableObject {
 
     // MARK: - 全量数据（用于已下载/轮播等本地标签页）
-    @Published var allWallpapers: [WallpaperItem] = []
+    @Published var allWallpapers: [WallpaperItem] = [] {
+        didSet { refreshDownloadedIds() }
+    }
+
+    /// 已缓存到本地的壁纸 ID 集合（异步计算，避免每帧渲染时同步调 fileExists）
+    @Published private(set) var downloadedWallpaperIds: Set<String> = []
+
+    private func refreshDownloadedIds() {
+        let items = allWallpapers
+        let cacheManager = WallpaperCacheManager.shared
+        Task.detached(priority: .utility) { [weak self] in
+            let ids = Set(items.compactMap { item -> String? in
+                let path = cacheManager.getLocalPath(for: item.fullURL).path
+                return FileManager.default.fileExists(atPath: path) ? item.id : nil
+            })
+            await MainActor.run { self?.downloadedWallpaperIds = ids }
+        }
+    }
 
     // MARK: - 搜索结果（Meilisearch，用于「电脑壁纸」标签页）
     @Published var searchResults: [WallpaperItem] = []
@@ -102,7 +119,7 @@ class WallpaperViewModel: ObservableObject {
     @Published var playlistIds: [String] = [] {
         didSet { UserDefaults.standard.set(playlistIds, forKey: "playlistIds"); setupSlideshowTimer() }
     }
-@Published var wallpaperFit: WallpaperFit = .fill {
+    @Published var wallpaperFit: WallpaperFit = .fill {
         didSet { UserDefaults.standard.set(wallpaperFit.rawValue, forKey: "wallpaperFit") }
     }
     @Published var targetScreenName: String = "全部" {
@@ -236,15 +253,12 @@ class WallpaperViewModel: ObservableObject {
 
         case .downloaded:
             if downloadedSubTab == .localImports { return localImports }
-            let base = allWallpapers.filter {
-                FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: $0.fullURL).path)
-            }
+            let base = allWallpapers.filter { downloadedWallpaperIds.contains($0.id) }
             return applyLocalFilters(to: base)
 
         case .slideshow:
             let base = allWallpapers.filter {
-                playlistIds.contains($0.id) &&
-                FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: $0.fullURL).path)
+                playlistIds.contains($0.id) && downloadedWallpaperIds.contains($0.id)
             }
             return applyLocalFilters(to: base)
 
@@ -1131,10 +1145,16 @@ class WallpaperViewModel: ObservableObject {
                         if self.isSlideshowEnabled { self.isSlideshowEnabled = false }
                         if self.isTimedPeriodEnabled { self.isTimedPeriodEnabled = false }
                     }
-                    if item.isVideo {
+                    let ext = localURL.pathExtension.lowercased()
+                    if ext == "html" || ext == "htm" {
+                        DesktopVideoManager.shared.clearVideoWallpaper()
+                        DesktopWebManager.shared.showWebWallpaper(url: localURL, screenName: self.targetScreenName)
+                    } else if item.isVideo {
+                        DesktopWebManager.shared.clearWebWallpaper()
                         DesktopVideoManager.shared.playVideoOnDesktop(url: localURL, screenName: self.targetScreenName)
                     } else {
                         DesktopVideoManager.shared.clearVideoWallpaper()
+                        DesktopWebManager.shared.clearWebWallpaper()
                         self.applyStaticWallpaper(url: localURL)
                         // macOS 14+ 桌面与锁屏同源，setDesktopImageURL 会自动同步锁屏，
                         // 无需再通过 killall WallpaperAgent 强制刷新（会导致桌面短暂蓝屏）
@@ -1340,19 +1360,24 @@ class WallpaperViewModel: ObservableObject {
     }
 
     func calculateCacheSize() {
-        var totalSize: Int64 = 0
-        if let files = try? FileManager.default.contentsOfDirectory(
-            at: WallpaperCacheManager.shared.cacheDirectory,
-            includingPropertiesForKeys: [.fileSizeKey]
-        ) {
-            for file in files {
-                if let attrs = try? file.resourceValues(forKeys: [.fileSizeKey]),
-                   let size = attrs.fileSize { totalSize += Int64(size) }
+        // 在后台线程枚举目录，避免阻塞主线程
+        let cacheDir = WallpaperCacheManager.shared.cacheDirectory
+        Task.detached(priority: .background) { [weak self] in
+            var totalSize: Int64 = 0
+            if let files = try? FileManager.default.contentsOfDirectory(
+                at: cacheDir, includingPropertiesForKeys: [.fileSizeKey]
+            ) {
+                for file in files {
+                    if let attrs = try? file.resourceValues(forKeys: [.fileSizeKey]),
+                       let size = attrs.fileSize { totalSize += Int64(size) }
+                }
+            }
+            await MainActor.run {
+                self?.cacheSizeString = String(format: "%.1f MB", Double(totalSize) / (1024 * 1024))
             }
         }
-        DispatchQueue.main.async {
-            self.cacheSizeString = String(format: "%.1f MB", Double(totalSize) / (1024 * 1024))
-        }
+        // 下载/删除后刷新已缓存 ID 集合，保持 displayWallpapers 准确
+        refreshDownloadedIds()
     }
 
     // MARK: - 以图搜图
@@ -1452,9 +1477,12 @@ class WallpaperViewModel: ObservableObject {
         guard let path = UserDefaults.standard.string(forKey: "LastWallpaperPath") else { return }
         let url = URL(fileURLWithPath: path)
         if FileManager.default.fileExists(atPath: url.path) {
-            if ["mp4", "mov"].contains(url.pathExtension.lowercased()) {
+            let ext = url.pathExtension.lowercased()
+            if ["mp4", "mov", "webm"].contains(ext) {
                 DesktopVideoManager.shared.playVideoOnDesktop(url: url)
                 Task { await syncLockScreenWallpaper(for: url) }
+            } else if ext == "html" || ext == "htm" {
+                DesktopWebManager.shared.showWebWallpaper(url: url)
             }
         }
     }
@@ -1473,6 +1501,15 @@ class WallpaperViewModel: ObservableObject {
 
     // MARK: - Steam Workshop
 
+    @Published var workshopSelectedType: String = "全部" {
+        didSet {
+            workshopCurrentPage = 0
+            workshopSteamCursor = 0
+            workshopDisplayPageSteamStart = [:]
+            fetchWorkshopItems()
+        }
+    }
+
     @Published var workshopItems: [SteamWorkshopItem] = []
     @Published var isLoadingWorkshop: Bool = false
     @Published var workshopSearchText: String = ""
@@ -1487,6 +1524,11 @@ class WallpaperViewModel: ObservableObject {
     @Published var workshopTotalBytes: [String: Int64] = [:]
     let workshopItemsPerPage: Int = 12
 
+    /// 游标：下一个要拉取的 Steam 原始页码（供 type 筛选多页合并使用）
+    var workshopSteamCursor: Int = 0
+    /// 缓存每个展示页对应的 Steam 起始页码，支持前后翻页时不重复/不跳过内容
+    var workshopDisplayPageSteamStart: [Int: Int] = [:]
+
     /// Tracks the active fetch so stale in-flight requests can be cancelled on page change.
     private var workshopFetchTask: Task<Void, Never>?
     /// Incremented on every new fetch. A task is only allowed to mutate state if its generation
@@ -1497,28 +1539,72 @@ class WallpaperViewModel: ObservableObject {
     func fetchWorkshopItems() {
         workshopFetchTask?.cancel()
         workshopFetchGeneration += 1
-        let gen  = workshopFetchGeneration
-        let page = workshopCurrentPage
-        let query = workshopSearchText
+        let gen        = workshopFetchGeneration
+        let displayPage = workshopCurrentPage
+        let query       = workshopSearchText
+        let filterType  = workshopSelectedType  // "全部" | "Video" | "Scene" | "Web" | "Image"
 
         workshopFetchTask = Task { @MainActor in
             isLoadingWorkshop = true
-            // defer only clears the indicator when THIS task is still the current generation;
-            // a stale/cancelled task must never clear loading while a newer task is running.
             defer {
                 if gen == workshopFetchGeneration { isLoadingWorkshop = false }
             }
             do {
-                let (items, hasMore) = try await SteamWorkshopService.shared.fetchViaRSS(
-                    query: query, page: page, perPage: workshopItemsPerPage
-                )
-                guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
-                // Show cards immediately, then enrich with tags/size in background
-                workshopItems = items
-                workshopHasNextPage = hasMore
-                let enriched = await SteamWorkshopService.shared.fetchItemDetails(for: items)
-                guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
-                workshopItems = enriched
+                // ── Steam 页码起点 ──────────────────────────────────────────────────
+                // displayPage == 0：总是从 Steam 第 0 页开始，同时清除旧游标缓存（新搜索/新筛选）
+                // displayPage  > 0：从上一页留下的游标续读，避免内容重复或跳过
+                let steamStart: Int
+                if displayPage == 0 {
+                    steamStart = 0
+                    workshopDisplayPageSteamStart = [:]
+                    workshopSteamCursor = 0
+                } else {
+                    steamStart = workshopDisplayPageSteamStart[displayPage] ?? workshopSteamCursor
+                }
+                workshopDisplayPageSteamStart[displayPage] = steamStart
+
+                // ── 循环拉取 Steam 页直到凑满 workshopItemsPerPage 张同类型壁纸 ──
+                // "全部"：直接取第一批，不需要跨页合并；其它类型最多尝试 8 个 Steam 页
+                let maxSteamPages = filterType == "全部" ? 1 : 8
+                var cursor       = steamStart
+                var collected: [SteamWorkshopItem] = []
+                var lastHasMore  = false
+
+                for _ in 0..<maxSteamPages {
+                    guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
+
+                    let (items, more) = try await SteamWorkshopService.shared.fetchViaRSS(
+                        query: query, page: cursor, perPage: workshopItemsPerPage
+                    )
+                    let enriched = await SteamWorkshopService.shared.fetchItemDetails(for: items)
+                    guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
+
+                    if filterType == "全部" {
+                        collected = enriched
+                    } else {
+                        let low = filterType.lowercased()
+                        collected.append(contentsOf: enriched.filter {
+                            $0.tags.contains(where: { $0.lowercased() == low })
+                        })
+                    }
+
+                    cursor += 1
+                    lastHasMore = more
+
+                    // 凑满或 Steam 无更多数据时提前退出
+                    if collected.count >= workshopItemsPerPage || !more { break }
+
+                    // 中间更新：让用户看到已找到的内容，不必等全部加载完
+                    workshopItems = Array(collected.prefix(workshopItemsPerPage))
+                }
+
+                // ── 保存游标供下一展示页使用 ──────────────────────────────────────
+                workshopDisplayPageSteamStart[displayPage + 1] = cursor
+                workshopSteamCursor = cursor
+
+                workshopItems = Array(collected.prefix(workshopItemsPerPage))
+                // 只要还有超出 12 张的缓冲，或 Steam 还有更多页，就允许翻页
+                workshopHasNextPage = collected.count > workshopItemsPerPage || lastHasMore
             } catch {
                 guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
                 statusMessage = "❌ Workshop 加载失败：\(error.localizedDescription)"
