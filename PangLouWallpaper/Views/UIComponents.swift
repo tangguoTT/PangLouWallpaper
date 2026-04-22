@@ -529,9 +529,12 @@ struct WallpaperCardView: View {
                 }
             }
         )
-        .shadow(color: Color.primary.opacity(isHovered ? 0.15 : 0.1), radius: isHovered ? 24 : 12, y: isHovered ? 12 : 6)
         .animation(.easeInOut(duration: 0.15), value: isHovered)
         .animation(.easeInOut(duration: 0.1), value: isBatchSelected)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .shadow(color: Color.primary.opacity(isHovered ? 0.15 : 0.1), radius: isHovered ? 24 : 12, y: isHovered ? 12 : 6)
+        )
         .background(CardHoverTracker { isHovered = $0 })
         .task(id: "\(item.id)_\(viewModel.cacheVersion)") { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); isDownloaded = FileManager.default.fileExists(atPath: localURL.path) }
     }
