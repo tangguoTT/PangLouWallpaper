@@ -292,8 +292,9 @@ struct EditProfileView: View {
         }
         .padding(28)
         .frame(width: 320)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-        .shadow(color: .black.opacity(0.35), radius: 30, y: 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 24, y: 12)
         .onAppear { username = viewModel.currentProfile?.username ?? "" }
     }
 
@@ -396,8 +397,9 @@ struct ChangePasswordView: View {
         }
         .padding(28)
         .frame(width: 320)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-        .shadow(color: .black.opacity(0.35), radius: 30, y: 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 24, y: 12)
     }
 
     private func save() {

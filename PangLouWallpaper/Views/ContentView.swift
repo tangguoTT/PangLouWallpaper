@@ -71,19 +71,23 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             // Top bar row: sidebar toggle (when hidden) + search bar
                             if !hideSearchBar {
-                                HStack(alignment: .center, spacing: 0) {
-                                    if !isSidebarVisible {
-                                        sidebarToggleButton
-                                            .padding(.leading, 14)
+                                VStack(spacing: 0) {
+                                    HStack(alignment: .center, spacing: 0) {
+                                        if !isSidebarVisible {
+                                            sidebarToggleButton
+                                                .padding(.leading, 14)
+                                                .padding(.top, 18)
+                                                .padding(.bottom, 12)
+                                        }
+                                        SearchFilterBarView(viewModel: viewModel)
+                                            .padding(.leading, isSidebarVisible ? 28 : 10)
+                                            .padding(.trailing, 28)
                                             .padding(.top, 18)
                                             .padding(.bottom, 12)
                                     }
-                                    SearchFilterBarView(viewModel: viewModel)
-                                        .padding(.leading, isSidebarVisible ? 28 : 10)
-                                        .padding(.trailing, 28)
-                                        .padding(.top, 18)
-                                        .padding(.bottom, 12)
+                                    Divider().opacity(0.5)
                                 }
+                                .background(.bar)
                                 .zIndex(10)
                             } else {
                                 // No search bar: show just the toggle button row when sidebar hidden
@@ -136,29 +140,29 @@ struct ContentView: View {
             // ── Modal Overlays ──
 
             if viewModel.showAbout {
-                Color.black.opacity(0.5).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.showAbout = false } }
-                    
+
                 VStack {
                     Spacer()
                     AboutView(viewModel: viewModel)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     Spacer()
                 }
                 .zIndex(98)
             }
 
             if viewModel.previewItem != nil {
-                Color.black.opacity(0.55).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil } }
-                    
+
                 VStack {
                     Spacer()
                     if let item = viewModel.previewItem {
                         WallpaperPreviewView(item: item, viewModel: viewModel)
-                            .transition(.scale(scale: 0.9).combined(with: .opacity))
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
                     Spacer()
                 }
@@ -166,35 +170,35 @@ struct ContentView: View {
             }
 
             if viewModel.addToCollectionTargetItem != nil {
-                Color.black.opacity(0.5).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.addToCollectionTargetItem = nil } }
-                    
+
                 VStack {
                     Spacer()
                     AddToCollectionView(viewModel: viewModel)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     Spacer()
                 }
                 .zIndex(99)
             }
 
             if viewModel.editingWallpaper != nil {
-                Color.black.opacity(0.5).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { viewModel.cancelEdit() }
 
                 VStack {
                     Spacer()
                     EditWallpaperPopupView(viewModel: viewModel)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     Spacer()
                 }
                 .zIndex(100)
             }
 
             if let item = viewModel.deleteConfirmItem {
-                Color.black.opacity(0.4).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { viewModel.deleteConfirmItem = nil }
                     .zIndex(100)
@@ -202,14 +206,14 @@ struct ContentView: View {
                 VStack {
                     Spacer()
                     DeleteConfirmView(item: item, viewModel: viewModel)
-                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     Spacer()
                 }
                 .zIndex(101)
             }
 
             if viewModel.showUserSpace {
-                Color.black.opacity(0.35)
+                Color.black.opacity(0.25)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .transition(.opacity)
@@ -219,7 +223,7 @@ struct ContentView: View {
                     Spacer()
                         .contentShape(Rectangle())
                         .onTapGesture { viewModel.showUserSpace = false }
-                        
+
                     UserSpaceView(viewModel: viewModel)
                 }
                 .transition(.move(edge: .trailing))
@@ -227,44 +231,42 @@ struct ContentView: View {
             }
 
             if viewModel.showEditProfile {
-                Color.black.opacity(0.5).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { viewModel.showEditProfile = false }
-                    
                     .zIndex(103.5)
                 VStack {
                     Spacer()
                     EditProfileView(viewModel: viewModel)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     Spacer()
                 }
                 .zIndex(104)
             }
 
             if viewModel.showChangePassword {
-                Color.black.opacity(0.5).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { viewModel.showChangePassword = false }
-                    
                     .zIndex(103.5)
                 VStack {
                     Spacer()
                     ChangePasswordView(viewModel: viewModel)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     Spacer()
                 }
                 .zIndex(104)
             }
 
             if viewModel.showLoginSheet {
-                Color.black.opacity(0.5).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.showLoginSheet = false } }
-                    
+
                 VStack {
                     Spacer()
                     AuthView(viewModel: viewModel)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     Spacer()
                 }
                 .zIndex(101)

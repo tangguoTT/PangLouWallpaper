@@ -15,10 +15,14 @@ struct SteamWorkshopView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                WorkshopSearchBar(viewModel: viewModel, isSidebarVisible: $isSidebarVisible)
-                    .padding(.horizontal, 28)
-                    .padding(.top, 18)
-                    .padding(.bottom, 12)
+                VStack(spacing: 0) {
+                    WorkshopSearchBar(viewModel: viewModel, isSidebarVisible: $isSidebarVisible)
+                        .padding(.horizontal, 28)
+                        .padding(.top, 18)
+                        .padding(.bottom, 12)
+                    Divider().opacity(0.5)
+                }
+                .background(.bar)
 
                 if viewModel.isLoadingWorkshop {
                     Spacer()
@@ -45,7 +49,7 @@ struct SteamWorkshopView: View {
 
             // Preview overlay
             if viewModel.workshopPreviewItem != nil {
-                Color.black.opacity(0.6).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -56,14 +60,14 @@ struct SteamWorkshopView: View {
 
                 if let item = viewModel.workshopPreviewItem {
                     WorkshopPreviewOverlay(item: item, viewModel: viewModel)
-                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         .zIndex(11)
                 }
             }
 
             // Steam login sheet
             if viewModel.workshopLoginItem != nil {
-                Color.black.opacity(0.6).ignoresSafeArea()
+                Rectangle().fill(.ultraThinMaterial).opacity(0.8).ignoresSafeArea()
                     .allowsHitTesting(true)
                     .onTapGesture {
                         if !viewModel.workshopLoginInProgress {
@@ -74,7 +78,7 @@ struct SteamWorkshopView: View {
 
                 if let item = viewModel.workshopLoginItem {
                     SteamLoginSheet(item: item, viewModel: viewModel)
-                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         .zIndex(21)
                 }
             }
@@ -306,6 +310,8 @@ struct WorkshopItemCard: View {
 
     var body: some View {
         ZStack {
+            // 实心黑底：消除圆角区域直角渲染痕迹
+            Color.black
             // 背景图片
             WorkshopCachedImage(url: item.previewURL)
 
@@ -332,7 +338,7 @@ struct WorkshopItemCard: View {
                         if item.fileSize > 0 {
                             let mb = Double(item.fileSize) / (1024.0 * 1024.0)
                             Text(mb >= 1024 ? String(format: "%.1f GB", mb / 1024) : String(format: "%.0f MB", mb))
-                                .font(.system(size: 10))
+                                .font(.system(size: 10).monospacedDigit())
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
@@ -365,7 +371,7 @@ struct WorkshopItemCard: View {
 
             // 下载中居中覆盖层（常驻，不需要 hover）
             if isDownloading && !isHovered {
-                Color.black.opacity(0.45)
+                Color.black.opacity(0.5)
                 VStack(spacing: 8) {
                     ProgressView()
                         .progressViewStyle(.circular)
@@ -379,13 +385,23 @@ struct WorkshopItemCard: View {
 
             // Hover overlay
             if isHovered {
-                Color.black.opacity(0.45)
+                Color.black.opacity(0.3)
                 downloadButton
             }
         }
-        .cornerRadius(14)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.3), Color.clear],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.5
+                )
+        )
+        .shadow(color: Color.primary.opacity(isHovered ? 0.15 : 0.1), radius: isHovered ? 24 : 12, y: isHovered ? 12 : 6)
+        .scaleEffect(isHovered ? 1.02 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isHovered)
         .onHover { isHovered = $0 }
         .onTapGesture {
@@ -666,10 +682,11 @@ struct WorkshopPreviewOverlay: View {
         }
         .frame(width: 680)
         .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(isDarkMode ? Color(red: 0.12, green: 0.13, blue: 0.16) : Color.white)
-                .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 10)
+            RoundedRectangle(cornerRadius: 24)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.2), radius: 24, x: 0, y: 12)
         )
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         .onAppear {
             viewModel.restoreWorkshopDownloadState(for: item)
         }
@@ -972,10 +989,11 @@ struct SteamLoginSheet: View {
         }
         .frame(width: 420)
         .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(isDarkMode ? Color(red: 0.12, green: 0.13, blue: 0.16) : Color.white)
-                .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 10)
+            RoundedRectangle(cornerRadius: 24)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.2), radius: 24, x: 0, y: 12)
         )
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         .onAppear {
             username = UserDefaults.standard.string(forKey: "steamUsername") ?? ""
             if password.isEmpty { password = viewModel.workshopLoginSavedPassword }
@@ -1075,7 +1093,7 @@ struct WorkshopCardDownloadView: View {
     @State private var timer: Timer? = nil
 
     private var elapsedText: String {
-        elapsed < 60 ? "\(elapsed) 秒" : "\(elapsed / 60) 分 \(elapsed % 60) 秒"
+        elapsed < 60 ? "\(elapsed)秒" : "\(elapsed / 60)分\(elapsed % 60)秒"
     }
 
     var body: some View {

@@ -262,7 +262,7 @@ private struct CardHoverOverlay: View {
     private var isNormalMode: Bool { viewModel.currentTab != .slideshow && !isUploadManage }
 
     var body: some View {
-        (colorScheme == .dark ? Color.black : Color.white).opacity(0.3).cornerRadius(12)
+        Color.black.opacity(0.28)
             .overlay(alignment: .center) { centerButtons }
             .overlay(alignment: .topLeading) { topLeadingButton }
             .overlay(alignment: .bottomLeading) { bottomLeadingButton }
@@ -300,7 +300,7 @@ private struct CardHoverOverlay: View {
                 Image(systemName: viewModel.playlistIds.contains(item.id) ? "star.fill" : "star")
                     .font(.system(size: 13))
                     .foregroundColor(viewModel.playlistIds.contains(item.id) ? .yellow : .white)
-                    .padding(8).background(Color.black.opacity(0.5)).clipShape(Circle())
+                    .padding(8).background(Color.primary.opacity(0.08)).clipShape(Circle())
             }.buttonStyle(.plain).padding(8)
         }
     }
@@ -314,7 +314,7 @@ private struct CardHoverOverlay: View {
                 Image(systemName: isInAnyCollection ? "bookmark.fill" : "bookmark")
                     .font(.system(size: 13))
                     .foregroundColor(isInAnyCollection ? Color(hex: "#C6AC2C") : .white)
-                    .padding(8).background(Color.black.opacity(0.5)).clipShape(Circle())
+                    .padding(8).background(Color.primary.opacity(0.08)).clipShape(Circle())
             }.buttonStyle(.plain).padding(8)
         }
     }
@@ -382,6 +382,9 @@ struct WallpaperCardView: View {
 
     var body: some View {
         ZStack {
+            // 实心黑底：确保圆角区域四角不透明，消除矩形渲染痕迹
+            Color.black
+
             // 预览点击区：悬停时从视图树彻底移除（不能只用 allowsHitTesting(false)，
             // 在 macOS 上含 contentShape(Rectangle()) 的 Button 即使禁用仍可能拦截点击）
             if !isHovered && !isBatchMode {
@@ -391,17 +394,13 @@ struct WallpaperCardView: View {
             }
 
             AsyncThumbnailView(item: item)
-                .scaleEffect(isHovered ? 1.06 : 1.0)
+                .scaleEffect(isHovered ? 1.05 : 1.0)
                 .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isHovered)
-                .cornerRadius(12)
-                .clipped()
                 .contentShape(Rectangle())
 
             if item.isVideo {
                 HoverVideoPlayerView(item: item)
-                    .scaleEffect(isHovered ? 1.06 : 1.0)
-                    .cornerRadius(12)
-                    .clipped()
+                    .scaleEffect(isHovered ? 1.05 : 1.0)
                     .contentShape(Rectangle())
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isHovered)
                     // NSViewRepresentable 在 SwiftUI 手势路由层面是不透明的，
@@ -449,7 +448,7 @@ struct WallpaperCardView: View {
             
             if let progress = viewModel.downloadProgress[item.id] {
                 ZStack {
-                    Color.black.opacity(0.6).cornerRadius(12)
+                    Color.black.opacity(0.55)
                     VStack(spacing: 6) {
                         ZStack {
                             Circle().stroke(Color.white.opacity(0.2), lineWidth: 4).frame(width: 44, height: 44)
@@ -472,7 +471,7 @@ struct WallpaperCardView: View {
 
             if viewModel.failedDownloadIds.contains(item.id) {
                 ZStack {
-                    Color.black.opacity(0.65).cornerRadius(12)
+                    Color.black.opacity(0.55)
                     VStack(spacing: 6) {
                         Image(systemName: "exclamationmark.icloud.fill").font(.system(size: 22)).foregroundColor(.red)
                         Text("下载失败").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
@@ -485,16 +484,28 @@ struct WallpaperCardView: View {
                 }.transition(.opacity).zIndex(11)
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(isCurrentWallpaper ? Color.accentColor : Color.primary.opacity(0.05), lineWidth: isCurrentWallpaper ? 2 : 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    isCurrentWallpaper
+                        ? AnyShapeStyle(Color.accentColor)
+                        : AnyShapeStyle(LinearGradient(
+                            colors: [Color.white.opacity(0.3), Color.clear],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                          )),
+                    lineWidth: isCurrentWallpaper ? 2 : 0.5
+                )
+        )
         // 批量选择覆盖层
         .overlay(
             Group {
                 if isBatchMode {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: 16)
                             .stroke(isBatchSelected ? Color.accentColor : Color.white.opacity(0.3), lineWidth: isBatchSelected ? 2.5 : 1)
                         if isBatchSelected {
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: 16)
                                 .fill(Color.accentColor.opacity(0.18))
                         }
                         VStack {
@@ -518,7 +529,7 @@ struct WallpaperCardView: View {
                 }
             }
         )
-        .shadow(color: Color.primary.opacity(isHovered ? 0.22 : 0.05), radius: isHovered ? 12 : 4, y: isHovered ? 6 : 2)
+        .shadow(color: Color.primary.opacity(isHovered ? 0.15 : 0.1), radius: isHovered ? 24 : 12, y: isHovered ? 12 : 6)
         .animation(.easeInOut(duration: 0.15), value: isHovered)
         .animation(.easeInOut(duration: 0.1), value: isBatchSelected)
         .background(CardHoverTracker { isHovered = $0 })
@@ -580,8 +591,8 @@ struct DeleteConfirmView: View {
         }
         .padding(28)
         .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.15), radius: 24, y: 10)
     }
 }
 
@@ -660,7 +671,7 @@ struct EditWallpaperPopupView: View {
         }
         .padding(30)
         .frame(width: 420)
-        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial).shadow(color: .black.opacity(0.2), radius: 20, y: 10))
+        .background(RoundedRectangle(cornerRadius: 24).fill(.ultraThinMaterial).shadow(color: .black.opacity(0.15), radius: 24, y: 10))
     }
 }
 
@@ -761,9 +772,9 @@ struct AboutView: View {
         }
         .padding(30)
         .frame(width: 320)
-        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
+        .background(RoundedRectangle(cornerRadius: 24).fill(.ultraThinMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .shadow(color: .black.opacity(0.15), radius: 24, y: 10)
     }
 }
 
@@ -836,7 +847,8 @@ struct WallpaperPreviewView: View {
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(width: 36, height: 36)
-                                .background(Color.black.opacity(0.5))
+                                .background(.ultraThinMaterial)
+                                .environment(\.colorScheme, .dark)
                                 .clipShape(Circle())
                         }.buttonStyle(.plain)
                             .padding(.leading, 12)
@@ -850,7 +862,8 @@ struct WallpaperPreviewView: View {
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(width: 36, height: 36)
-                                .background(Color.black.opacity(0.5))
+                                .background(.ultraThinMaterial)
+                                .environment(\.colorScheme, .dark)
                                 .clipShape(Circle())
                         }.buttonStyle(.plain)
                             .padding(.trailing, 12)
@@ -890,7 +903,10 @@ struct WallpaperPreviewView: View {
                         Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil } }) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 11, weight: .bold)).foregroundColor(.white)
-                                .padding(8).background(Color.black.opacity(0.55)).clipShape(Circle())
+                                .padding(8)
+                                .background(.ultraThinMaterial)
+                                .environment(\.colorScheme, .dark)
+                                .clipShape(Circle())
                         }.buttonStyle(.plain).padding(12)
                     }
                     Spacer()
@@ -917,7 +933,7 @@ struct WallpaperPreviewView: View {
                         .background(Color.primary.opacity(0.07)).clipShape(Capsule())
                     if !fileSizeText.isEmpty {
                         Text(fileSizeText)
-                            .font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                            .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundColor(.secondary)
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(Color.primary.opacity(0.07)).clipShape(Capsule())
                     }
@@ -1003,10 +1019,10 @@ struct WallpaperPreviewView: View {
             }
             .padding(20)
         }
-        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
+        .background(RoundedRectangle(cornerRadius: 24).fill(.ultraThinMaterial))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .shadow(color: .black.opacity(0.15), radius: 24, y: 12)
         .frame(width: 560)
         .task(id: item.id) {
             await fetchFileSize()
@@ -1172,7 +1188,7 @@ struct AddToCollectionView: View {
         }
         .padding(24)
         .frame(width: 360)
-        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial).shadow(color: .black.opacity(0.2), radius: 20, y: 10))
+        .background(RoundedRectangle(cornerRadius: 24).fill(.ultraThinMaterial).shadow(color: .black.opacity(0.15), radius: 24, y: 10))
     }
 
     private func createAndAdd() {
