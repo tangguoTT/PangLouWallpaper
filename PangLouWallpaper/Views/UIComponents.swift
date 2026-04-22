@@ -169,6 +169,7 @@ class VideoLayerView: NSView {
 struct AsyncThumbnailView: View {
     let item: WallpaperItem
     @State private var thumbnail: NSImage?
+    @State private var isWebWallpaper = false   // HTML 文件且无预览图时置 true
 
     var body: some View {
         Color.primary.opacity(0.05)
@@ -178,6 +179,16 @@ struct AsyncThumbnailView: View {
                         Image(nsImage: img)
                             .resizable()
                             .scaledToFill()
+                    } else if isWebWallpaper {
+                        // 网页壁纸无预览图时显示占位图标
+                        VStack(spacing: 5) {
+                            Image(systemName: "globe")
+                                .font(.system(size: 22, weight: .thin))
+                                .foregroundColor(.secondary.opacity(0.45))
+                            Text("网页壁纸")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary.opacity(0.4))
+                        }
                     } else {
                         ProgressView().controlSize(.small)
                     }
@@ -186,6 +197,25 @@ struct AsyncThumbnailView: View {
             .clipped()
             .contentShape(Rectangle())
             .task(id: item.fullURL) {
+                isWebWallpaper = false
+                // 本地 HTML 壁纸：先找同目录 preview 图，否则显示占位图标
+                let ext = item.fullURL.pathExtension.lowercased()
+                if item.fullURL.isFileURL && (ext == "html" || ext == "htm") {
+                    let dir = item.fullURL.deletingLastPathComponent()
+                    let candidates = ["preview.jpg", "preview.jpeg", "preview.png",
+                                      "thumbnail.jpg", "thumbnail.png"]
+                    for name in candidates {
+                        let previewURL = dir.appendingPathComponent(name)
+                        if FileManager.default.fileExists(atPath: previewURL.path),
+                           let img = NSImage(contentsOf: previewURL) {
+                            thumbnail = img
+                            return
+                        }
+                    }
+                    isWebWallpaper = true   // 无预览图可用
+                    return
+                }
+
                 if item.fullURL.isFileURL && item.isVideo {
                     thumbnail = await Task.detached(priority: .utility) {
                         let asset = AVAsset(url: item.fullURL)
@@ -212,7 +242,7 @@ struct AsyncThumbnailView: View {
                     thumbnail = await WallpaperCacheManager.shared.fetchThumbnail(for: thumbURL)
                 }
             }
-            .onDisappear { thumbnail = nil }
+            .onDisappear { thumbnail = nil; isWebWallpaper = false }
     }
 }
 
@@ -227,7 +257,7 @@ private struct CardHoverOverlay: View {
     let isInAnyCollection: Bool
     let colorScheme: ColorScheme
 
-    private var isLocalImport: Bool { viewModel.downloadedSubTab == .localImports }
+    private var isLocalImport: Bool { viewModel.downloadedSubTab == .localImports || viewModel.downloadedSubTab == .workshop }
     private var isUploadManage: Bool { viewModel.currentTab == .upload && viewModel.uploadMode == .manage }
     private var isNormalMode: Bool { viewModel.currentTab != .slideshow && !isUploadManage }
 
@@ -367,30 +397,6 @@ struct WallpaperCardView: View {
                 .clipped()
                 .contentShape(Rectangle())
 
-            // 整体随悬停淡出
-
-            // 分辨率角标（右上角，仅图片且有分辨率信息时显示）
-            if !item.isVideo && !item.resolution.isEmpty && item.resolution != "全部" {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Text(item.resolution)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(Color.black.opacity(0.48))
-                            .cornerRadius(4)
-                            .padding([.top, .trailing], 8)
-                    }
-                    Spacer()
-                }
-                .opacity(isHovered ? 0 : 1)
-                .allowsHitTesting(false)  // 纯装饰，永远不拦截事件（Color background 会吸收点击）
-                .animation(.easeInOut(duration: 0.18), value: isHovered)
-            }
-
-            if viewModel.currentTab == .pc && isDownloaded && !isHovered { VStack { Spacer(); HStack { Spacer(); Image(systemName: "checkmark.icloud.fill").font(.system(size: 14)).foregroundColor(Color(hex: "#449B3E")).padding(6).background(.ultraThinMaterial).clipShape(Circle()).padding(8).shadow(color: .black.opacity(0.2), radius: 3) } } }
-            if isCurrentWallpaper && !isHovered { VStack { HStack { Text("使用中").font(.system(size: 10, weight: .bold)).foregroundColor(.white).padding(.horizontal, 8).padding(.vertical, 3).background(Color.accentColor).clipShape(Capsule()).padding(8); Spacer() }; Spacer() } }
             if item.isVideo {
                 HoverVideoPlayerView(item: item)
                     .scaleEffect(isHovered ? 1.06 : 1.0)
@@ -403,6 +409,30 @@ struct WallpaperCardView: View {
                     // 视频预览纯展示无需交互，禁用后点击事件正确传递给上层按钮。
                     .allowsHitTesting(false)
             }
+
+            // 底部渐变信息栏（标题，置于视频层之上确保始终可见）
+            VStack(spacing: 0) {
+                Spacer()
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black.opacity(0.65), location: 1)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 50)
+                .overlay(alignment: .bottomLeading) {
+                    Text(item.title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.92))
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 6)
+                }
+            }
+            .allowsHitTesting(false)
+
+            if isCurrentWallpaper && !isHovered { VStack { HStack { Text("使用中").font(.system(size: 10, weight: .bold)).foregroundColor(.white).padding(.horizontal, 8).padding(.vertical, 3).background(Color.accentColor).clipShape(Capsule()).padding(8); Spacer() }; Spacer() } }
             
             let isDownloading = viewModel.downloadProgress[item.id] != nil
 
@@ -502,7 +532,7 @@ struct DeleteConfirmView: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @Environment(\.colorScheme) var colorScheme
 
-    private var isLocalImport: Bool { viewModel.downloadedSubTab == .localImports }
+    private var isLocalImport: Bool { viewModel.downloadedSubTab == .localImports || viewModel.downloadedSubTab == .workshop }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -636,7 +666,41 @@ struct EditWallpaperPopupView: View {
 
 struct CustomThemeToggleView: View {
     @Binding var isDarkMode: Bool
-    var body: some View { ZStack { Capsule().fill(isDarkMode ? Color(white: 0.25) : Color(white: 0.8)).frame(width: 54, height: 28).overlay(Capsule().stroke(Color.black.opacity(0.1), lineWidth: 1)); HStack { if isDarkMode { Spacer(minLength: 0) }; ZStack { Circle().fill(Color(white: 0.75)).shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1); if isDarkMode { ZStack { Circle().stroke(Color.black, lineWidth: 1.5).frame(width: 14, height: 14); Image(systemName: "moon.fill").resizable().scaledToFit().frame(width: 8, height: 8).foregroundColor(.black).offset(x: -0.5, y: -0.5) }.transition(.scale.combined(with: .opacity)) } else { ZStack { Group { Rectangle().fill(Color.black).frame(width: 16, height: 16); Rectangle().fill(Color.black).frame(width: 16, height: 16).rotationEffect(.degrees(45)) }; Group { Rectangle().fill(Color(red: 0.98, green: 0.86, blue: 0.45)).frame(width: 13, height: 13); Rectangle().fill(Color(red: 0.98, green: 0.86, blue: 0.45)).frame(width: 13, height: 13).rotationEffect(.degrees(45)) }; Circle().stroke(Color.black, lineWidth: 1).frame(width: 7, height: 7).background(Circle().fill(Color(red: 0.98, green: 0.86, blue: 0.45))) }.transition(.scale.combined(with: .opacity)) } }.frame(width: 24, height: 24).padding(2); if !isDarkMode { Spacer(minLength: 0) } } }.frame(width: 54, height: 28).onTapGesture { withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isDarkMode.toggle() } } }
+    var body: some View {
+        ZStack {
+            Capsule()
+                .fill(isDarkMode ? Color(white: 0.2) : Color(red: 0.85, green: 0.92, blue: 1.0))
+                .frame(width: 54, height: 28)
+            HStack {
+                if isDarkMode { Spacer(minLength: 0) }
+                ZStack {
+                    Circle()
+                        .fill(isDarkMode ? Color(white: 0.18) : Color.white)
+                        .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                    if isDarkMode {
+                        Image(systemName: "moon.fill")
+                            .resizable().scaledToFit()
+                            .frame(width: 12, height: 12)
+                            .foregroundColor(Color(red: 0.78, green: 0.85, blue: 1.0))
+                            .transition(.scale.combined(with: .opacity))
+                    } else {
+                        Image(systemName: "sun.max.fill")
+                            .resizable().scaledToFit()
+                            .frame(width: 14, height: 14)
+                            .foregroundColor(Color(red: 1.0, green: 0.75, blue: 0.2))
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .frame(width: 24, height: 24)
+                .padding(2)
+                if !isDarkMode { Spacer(minLength: 0) }
+            }
+        }
+        .frame(width: 54, height: 28)
+        .onTapGesture {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isDarkMode.toggle() }
+        }
+    }
 }
 struct NavPillButtonView: View {
     let title: String; let icon: String; let isSelected: Bool; var showBadge: Bool = false; let action: () -> Void
@@ -859,10 +923,10 @@ struct WallpaperPreviewView: View {
                     }
                 }
 
-                HStack(spacing: 10) {
+                VStack(spacing: 8) {
                     if viewModel.currentTab == .pc {
                         if !viewModel.isLoggedIn {
-                            // 未登录：统一展示登录入口
+                            // 未登录：全宽登录入口
                             Button(action: {
                                 viewModel.previewItem = nil
                                 viewModel.showLoginSheet = true
@@ -871,25 +935,13 @@ struct WallpaperPreviewView: View {
                                     Image(systemName: "person.crop.circle.badge.plus")
                                     Text("登录后下载")
                                 }
-                                .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                                .padding(.vertical, 9).padding(.horizontal, 18)
-                                .background(Color.accentColor).clipShape(Capsule())
+                                .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(Color.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                             }.buttonStyle(.plain)
                         } else {
-                            Button(action: {
-                                viewModel.downloadWallpaper(item: item)
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil }
-                            }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: isDownloaded ? "checkmark.circle.fill" : "square.and.arrow.down")
-                                    Text(isDownloaded ? "已下载" : "下载壁纸")
-                                }
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(isDownloaded ? .secondary : .primary)
-                                .padding(.vertical, 9).padding(.horizontal, 18)
-                                .background(Color.primary.opacity(0.08)).clipShape(Capsule())
-                            }.buttonStyle(.plain).disabled(isDownloaded || isDownloading)
-
+                            // 主按钮：设为壁纸（全宽，强调色）
                             Button(action: {
                                 viewModel.setWallpaper(item: item)
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil }
@@ -898,12 +950,29 @@ struct WallpaperPreviewView: View {
                                     Image(systemName: item.isVideo ? "play.circle.fill" : "photo.fill")
                                     Text(item.isVideo ? "设为动态壁纸" : "设为壁纸")
                                 }
-                                .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                                .padding(.vertical, 9).padding(.horizontal, 18)
-                                .background(Color.accentColor).clipShape(Capsule())
+                                .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(Color.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                             }.buttonStyle(.plain).disabled(isDownloading)
+                            // 次级按钮：下载壁纸（全宽，ghost）
+                            Button(action: {
+                                viewModel.downloadWallpaper(item: item)
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil }
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: isDownloaded ? "checkmark.circle.fill" : "square.and.arrow.down")
+                                    Text(isDownloaded ? "已下载" : "下载壁纸")
+                                }
+                                .font(.system(size: 13))
+                                .foregroundColor(isDownloaded ? .secondary : .primary)
+                                .frame(maxWidth: .infinity).padding(.vertical, 9)
+                                .background(Color.primary.opacity(0.07))
+                                .clipShape(RoundedRectangle(cornerRadius: 9))
+                            }.buttonStyle(.plain).disabled(isDownloaded || isDownloading)
                         }
                     } else if viewModel.currentTab != .slideshow {
+                        // 主按钮：设为壁纸（全宽，强调色）
                         Button(action: {
                             viewModel.setWallpaper(item: item)
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = nil }
@@ -912,23 +981,22 @@ struct WallpaperPreviewView: View {
                                 Image(systemName: item.isVideo ? "play.circle.fill" : "photo.fill")
                                 Text(item.isVideo ? "设为动态壁纸" : "设为壁纸")
                             }
-                            .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                            .padding(.vertical, 9).padding(.horizontal, 18)
-                            .background(Color.accentColor).clipShape(Capsule())
+                            .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .background(Color.accentColor)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                         }.buttonStyle(.plain).disabled(isDownloading)
-                    }
-
-                    if viewModel.currentTab != .pc && viewModel.currentTab != .slideshow {
+                        // 次级按钮：加入轮播（全宽，ghost）
                         Button(action: { viewModel.toggleInPlaylist(item: item) }) {
                             HStack(spacing: 6) {
                                 Image(systemName: viewModel.playlistIds.contains(item.id) ? "star.fill" : "star")
                                 Text(viewModel.playlistIds.contains(item.id) ? "已加轮播" : "加入轮播")
                             }
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 13))
                             .foregroundColor(viewModel.playlistIds.contains(item.id) ? Color(hex: "#C6AC2C") : .primary)
-                            .padding(.vertical, 9).padding(.horizontal, 18)
-                            .background(viewModel.playlistIds.contains(item.id) ? Color(hex: "#C6AC2C").opacity(0.15) : Color.primary.opacity(0.08))
-                            .clipShape(Capsule())
+                            .frame(maxWidth: .infinity).padding(.vertical, 9)
+                            .background(viewModel.playlistIds.contains(item.id) ? Color(hex: "#C6AC2C").opacity(0.12) : Color.primary.opacity(0.07))
+                            .clipShape(RoundedRectangle(cornerRadius: 9))
                         }.buttonStyle(.plain)
                     }
                 }

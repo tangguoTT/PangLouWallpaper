@@ -768,11 +768,16 @@ struct UserUploadRowView: View {
 // 🌟🌟🌟 核心手术：无敌自适应切分布局引擎 🌟🌟🌟
 struct WallpaperGridView: View {
     @ObservedObject var viewModel: WallpaperViewModel
+    @AppStorage("isSidebarVisible") private var isSidebarVisible: Bool = true
     var emptyText: String {
         switch viewModel.currentTab {
         case .pc:         return "未找到相关壁纸"
         case .downloaded:
-            return viewModel.downloadedSubTab == .localImports ? "还没有本地导入的壁纸" : "暂无下载缓存"
+            switch viewModel.downloadedSubTab {
+            case .localImports: return "还没有本地导入的壁纸"
+            case .workshop:     return "还没有 Workshop 下载的壁纸"
+            case .local:        return "暂无下载缓存"
+            }
         case .slideshow:  return "暂无轮播壁纸，请去已下载中点亮右上角星星添加"
         case .upload:         return viewModel.uploadMode == .manage ? "暂无壁纸" : ""
         case .collection:     return "该合集还没有壁纸，去其他标签页点击壁纸右下角书签按钮添加"
@@ -783,7 +788,7 @@ struct WallpaperGridView: View {
     var body: some View {
         VStack(spacing: 0) {
             if viewModel.currentTab == .steamWorkshop {
-                SteamWorkshopView(viewModel: viewModel)
+                SteamWorkshopView(viewModel: viewModel, isSidebarVisible: $isSidebarVisible)
             } else if viewModel.currentTab == .upload {
                 // ── Segment 选择器 ──
                 HStack {
@@ -853,13 +858,25 @@ struct WallpaperGridView: View {
                     VStack(spacing: 10) {
                         HStack {
                             Picker("", selection: $viewModel.downloadedSubTab) {
-                                Text("已下载").tag(DownloadedSubTab.local)
+                                Text("云端下载").tag(DownloadedSubTab.local)
+                                Text("Workshop").tag(DownloadedSubTab.workshop)
                                 Text("本地导入").tag(DownloadedSubTab.localImports)
                             }
                             .pickerStyle(.segmented)
-                            .frame(width: 240)
+                            .frame(width: 320)
+                            // 当前子标签缓存大小
+                            let subTabSize: String = {
+                                switch viewModel.downloadedSubTab {
+                                case .local:        return viewModel.cloudCacheSizeString
+                                case .workshop:     return viewModel.workshopCacheSizeString
+                                case .localImports: return viewModel.localImportSizeString
+                                }
+                            }()
+                            Text(subTabSize)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
                             Spacer()
-                            // 批量选择按钮（仅"已下载"子标签可用）
+                            // 批量选择按钮（仅"云端下载"子标签可用）
                             if viewModel.downloadedSubTab == .local && !viewModel.displayWallpapers.isEmpty {
                                 if viewModel.isBatchSelectMode {
                                     Button(action: { viewModel.selectAllDownloaded() }) {
@@ -1703,6 +1720,7 @@ struct SidebarView: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @Binding var isDarkMode: Bool
     @Binding var showSettings: Bool
+    @Binding var isSidebarVisible: Bool
 
     private let navItems: [(AppTab, String)] = [
         (.pc,            "desktopcomputer"),
@@ -1724,6 +1742,20 @@ struct SidebarView: View {
                 Text("胖楼壁纸")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(.primary)
+                Spacer()
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        isSidebarVisible = false
+                    }
+                }) {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary.opacity(0.6))
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("隐藏侧边栏")
             }
             .padding(.horizontal, 18)
             .padding(.top, 22)
@@ -1924,6 +1956,23 @@ struct SettingsView: View {
                         }
                         .labelsHidden()
                         .frame(width: 180)
+                    }
+                    Divider().padding(.leading, 50)
+                    SettingsRowView(
+                        icon: viewModel.videoVolume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                        label: "壁纸音量",
+                        subLabel: viewModel.videoVolume == 0 ? "静音" : "\(Int(viewModel.videoVolume * 100))%"
+                    ) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "speaker.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                            Slider(value: $viewModel.videoVolume, in: 0...1, step: 0.05)
+                                .frame(width: 160)
+                            Image(systemName: "speaker.wave.3.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
 

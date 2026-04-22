@@ -56,11 +56,23 @@ class DesktopVideoManager: NSObject {
     }
 
     private var screenPlayers: [ScreenPlayer] = []
+    private var currentVideoURL: URL?
+    private var currentScreenName: String = "全部"
 
     // MARK: - 系统状态
 
     private var isSleeping = false
     private var isPausedByEnergySaving = false
+
+    var videoVolume: Float = UserDefaults.standard.float(forKey: "videoVolume") {
+        didSet {
+            UserDefaults.standard.set(videoVolume, forKey: "videoVolume")
+            for sp in screenPlayers {
+                sp.player.volume = videoVolume
+                sp.player.isMuted = (videoVolume == 0)
+            }
+        }
+    }
 
     var isEnergySavingEnabled: Bool = UserDefaults.standard.bool(forKey: "energySavingEnabled") {
         didSet {
@@ -108,6 +120,18 @@ class DesktopVideoManager: NSObject {
             scheduleEnergySavingCheck(after: 1.0)
         } else {
             resumeAll()
+            // 系统深度休眠（关盖子）后 AVQueuePlayer 可能实际未恢复，延迟检测并重建
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.rebuildIfStalled()
+            }
+        }
+    }
+
+    private func rebuildIfStalled() {
+        guard !isSleeping, !screenPlayers.isEmpty, let url = currentVideoURL else { return }
+        let stalled = screenPlayers.contains { $0.player.timeControlStatus != .playing }
+        if stalled {
+            playVideoOnDesktop(url: url, screenName: currentScreenName)
         }
     }
 
@@ -201,7 +225,8 @@ class DesktopVideoManager: NSObject {
         templateItem.seekingWaitsForVideoCompositionRendering = false
 
         let player = AVQueuePlayer()
-        player.isMuted = true
+        player.volume = videoVolume
+        player.isMuted = (videoVolume == 0)
         player.preventsDisplaySleepDuringVideoPlayback = false
         player.automaticallyWaitsToMinimizeStalling = false
 
@@ -219,6 +244,7 @@ class DesktopVideoManager: NSObject {
 
     /// 清除动态壁纸（淡出后移除）
     func clearVideoWallpaper() {
+        currentVideoURL = nil
         let old = screenPlayers
         screenPlayers = []
         isSleeping = false
@@ -232,6 +258,8 @@ class DesktopVideoManager: NSObject {
 
     /// 设置动态壁纸（淡入新窗口，淡出旧窗口，交叉过渡）
     func playVideoOnDesktop(url: URL, screenName: String = "全部") {
+        currentVideoURL = url
+        currentScreenName = screenName
         let oldPlayers = screenPlayers
 
         // 确定目标屏幕

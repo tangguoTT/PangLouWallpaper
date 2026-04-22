@@ -46,119 +46,112 @@ class SteamWorkshopService: NSObject {
         return c
     }()
 
+    // MARK: - Worker base URL (read from Secrets.plist)
+
+    private static let workerBaseURL: String = {
+        guard let url  = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+              let dict = NSDictionary(contentsOf: url),
+              let host = dict["SteamWorkerURL"] as? String, !host.isEmpty else {
+            fatalError("Secrets.plist 缺少 SteamWorkerURL，请参考 Secrets.plist.example")
+        }
+        return host
+    }()
+
     // MARK: - Page result cache (5-min TTL)
 
     private struct PageCacheEntry {
         let items: [SteamWorkshopItem]
         let hasMore: Bool
+        let nextCursor: String
+        let total: Int
         let date: Date
     }
     private var pageCache: [String: PageCacheEntry] = [:]
     private let pageCacheTTL: TimeInterval = 300
 
-    // MARK: - Browse/Search (no key required)
+    // MARK: - Browse/Search via Cloudflare Worker
 
-    /// Fetches Workshop items by scraping Steam's public render endpoint.
-    /// Returns hasMore=true when the page is full (can't know actual total from HTML).
-    /// Results are cached in memory for 5 minutes to avoid redundant requests.
-    /// Steam render endpoint 不稳定支持服务端 tag 过滤，故此处只按 query+page 抓取原始结果。
-    /// 类型筛选（Video/Scene/Web/Image）在 enrichment 完成后由调用方做客户端过滤。
-    func fetchViaRSS(query: String, page: Int, perPage: Int = 20) async throws -> (items: [SteamWorkshopItem], hasMore: Bool) {
-        let cacheKey = "\(query)|\(page)"
+    /// Fetches Workshop items through the Cloudflare Worker which proxies Steam's
+    /// `IPublishedFileService/QueryFiles/v1/` API (no VPN required from China).
+    /// Uses cursor-based pagination: pass "*" for the first page, then use the
+    /// returned nextCursor for subsequent pages.
+    func fetchViaWorker(query: String, cursor: String = "*", page: Int? = nil, filterTag: String? = nil, sortType: String = "0", perPage: Int = 20) async throws -> (items: [SteamWorkshopItem], hasMore: Bool, nextCursor: String, total: Int) {
+        let tag = filterTag ?? ""
+        let cacheKey = page != nil ? "\(query)|page\(page!)|\(sortType)|\(perPage)|\(tag)" : "\(query)|\(cursor)|\(sortType)|\(tag)"
         if let cached = pageCache[cacheKey], Date().timeIntervalSince(cached.date) < pageCacheTTL {
-            return (cached.items, cached.hasMore)
+            return (cached.items, cached.hasMore, cached.nextCursor, cached.total)
         }
 
-        var components = URLComponents(string: "https://steamcommunity.com/workshop/browse/render/")!
-        var params: [URLQueryItem] = [
-            URLQueryItem(name: "appid",    value: appId),
-            URLQueryItem(name: "section",  value: "readytouseitems"),
-            URLQueryItem(name: "p",        value: "\(page + 1)"),
+        var components = URLComponents(string: "\(Self.workerBaseURL)/workshop/query")!
+        var queryItems = [
+            URLQueryItem(name: "query",     value: query),
+            URLQueryItem(name: "sort_type", value: sortType),
+            URLQueryItem(name: "per_page",  value: "\(perPage)"),
         ]
-        if query.isEmpty {
-            params.append(URLQueryItem(name: "browsesort", value: "toprated"))
+        if let p = page {
+            queryItems.append(URLQueryItem(name: "page", value: "\(p)"))
         } else {
-            params.append(URLQueryItem(name: "browsesort", value: "textsearch"))
-            params.append(URLQueryItem(name: "searchtext", value: query))
+            queryItems.append(URLQueryItem(name: "cursor", value: cursor))
         }
-        components.queryItems = params
+        if let tag = filterTag, !tag.isEmpty {
+            queryItems.append(URLQueryItem(name: "filter_tag", value: tag))
+        }
+        components.queryItems = queryItems
         guard let url = components.url else { throw URLError(.badURL) }
-        var request = URLRequest(url: url)
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
-        request.cachePolicy = .useProtocolCachePolicy
-
-        let (data, response) = try await Self.browseSession.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let html = String(data: data, encoding: .utf8) else {
+        let (data, response) = try await Self.browseSession.data(from: url)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard statusCode == 200 else {
+            let body = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            print("[Workshop] HTTP \(statusCode): \(body)")
             throw URLError(.badServerResponse)
         }
-
-        let items = parseWorkshopHTML(html)
-        // Steam doesn't expose a total count in the HTML — rely on whether the page is full
-        let hasMore = items.count >= perPage
-        pageCache[cacheKey] = PageCacheEntry(items: items, hasMore: hasMore, date: Date())
-        return (items, hasMore)
-    }
-
-    // MARK: - HTML Parser
-    //
-    // Actual Steam Workshop HTML structure (from render endpoint):
-    //   data-publishedfileid="ID"         → item ID
-    //   class="workshopItemPreviewImage " src="URL"  → preview image
-    //   class="workshopItemTitle ..."     → title text inside the div
-
-    private func parseWorkshopHTML(_ html: String) -> [SteamWorkshopItem] {
-        // Collect IDs (deduplicated, order-preserving — each item appears twice in the HTML)
-        var seenIds = Set<String>()
-        var orderedIds: [String] = []
-        allCaptures(in: html, pattern: #"data-publishedfileid="(\d+)""#, groupCount: 1) { g in
-            if let id = g[0], seenIds.insert(id).inserted { orderedIds.append(id) }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let outer = json["response"] as? [String: Any] else {
+            let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            print("[Workshop] JSON parse failed: \(body)")
+            throw URLError(.cannotParseResponse)
         }
 
-        // Collect preview URLs in DOM order (one per item)
-        // Steam CDN supports imw/imh resize params — bump to 440×248 (16:9) for sharp cards
-        var previewURLs: [URL] = []
-        allCaptures(in: html, pattern: #"class="workshopItemPreviewImage[^"]*"\s+src="([^"]+)""#, groupCount: 1) { g in
-            if let src = g[0], let url = URL(string: src) {
-                previewURLs.append(url.steamPreview(width: 440, height: 248))
+        let nextCursorValue = outer["next_cursor"] as? String ?? ""
+        let totalResults = outer["total"] as? Int ?? 0
+        let details = outer["publishedfiledetails"] as? [[String: Any]] ?? []
+
+        let items: [SteamWorkshopItem] = details.compactMap { d in
+            guard let id    = d["publishedfileid"] as? String,
+                  let title = d["title"] as? String,
+                  !title.isEmpty else { return nil }
+
+            let previewURL = (d["preview_url"] as? String).flatMap { URL(string: $0) }
+
+            let fileSize: Int
+            if let s = d["file_size"] as? String { fileSize = Int(s) ?? 0 }
+            else { fileSize = d["file_size"] as? Int ?? 0 }
+
+            // QueryFiles returns tags as {"tags": [{tag: "Video"}, ...]}
+            // GetPublishedFileDetails returns tags as [{tag: "Video"}, ...]
+            var tags: [String] = []
+            if let tagsObj = d["tags"] as? [String: Any],
+               let tagArr  = tagsObj["tags"] as? [[String: Any]] {
+                tags = tagArr.compactMap { $0["tag"] as? String }
+            } else if let tagArr = d["tags"] as? [[String: Any]] {
+                tags = tagArr.compactMap { $0["tag"] as? String }
             }
-        }
 
-        // Collect titles in DOM order (one per item)
-        var titlesOrdered: [String] = []
-        allCaptures(in: html, pattern: #"class="workshopItemTitle[^"]*">([^<]+)<"#, groupCount: 1) { g in
-            if let t = g[0] {
-                let clean = t.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !clean.isEmpty { titlesOrdered.append(clean) }
-            }
-        }
-
-        return orderedIds.enumerated().map { i, id in
-            SteamWorkshopItem(
+            return SteamWorkshopItem(
                 id: id,
-                title: i < titlesOrdered.count ? titlesOrdered[i] : "无标题",
-                previewURL: i < previewURLs.count ? previewURLs[i] : nil,
-                description: "",
-                tags: [],
-                fileSize: 0,
-                timeUpdated: 0
+                title: title,
+                previewURL: previewURL,
+                description: d["short_description"] as? String ?? "",
+                tags: tags,
+                fileSize: fileSize,
+                timeUpdated: d["time_updated"] as? Int ?? 0
             )
         }
-    }
 
-    private func allCaptures(in string: String, pattern: String, groupCount: Int,
-                             handler: ([String?]) -> Void) {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
-        let nsString = string as NSString
-        regex.enumerateMatches(in: string, range: NSRange(location: 0, length: nsString.length)) { match, _, _ in
-            guard let match else { return }
-            var groups: [String?] = []
-            for i in 1...groupCount {
-                let r = match.range(at: i)
-                groups.append(r.location != NSNotFound ? nsString.substring(with: r) : nil)
-            }
-            handler(groups)
-        }
+        // 满页说明大概率还有更多；next_cursor 为空/0 则明确没有更多
+        let hasMore = details.count >= perPage || (!nextCursorValue.isEmpty && nextCursorValue != "0")
+        pageCache[cacheKey] = PageCacheEntry(items: items, hasMore: hasMore, nextCursor: nextCursorValue, total: totalResults, date: Date())
+        return (items, hasMore, nextCursorValue, totalResults)
     }
 
     // MARK: - Item Details (Steam API)
@@ -228,7 +221,7 @@ class SteamWorkshopService: NSObject {
         appSteamCMDDirectory.appendingPathComponent("steamcmd.sh")
     }
 
-    private static let steamCMDDownloadURL = URL(string: "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz")!
+    private static let steamCMDDownloadURL = URL(string: "\(workerBaseURL)/steamcmd/osx")!
 
     /// Returns the steamcmd executable path: prefers system install, falls back to app-bundled.
     static func findSteamCMD() -> String? {
@@ -347,22 +340,46 @@ class SteamWorkshopService: NSObject {
             .first
     }
 
-    /// Returns the total bytes currently written in the item's download directories.
-    /// Checks both the final content path and the in-progress downloading path.
-    static func totalDownloadedBytes(itemId: String) -> Int64 {
-        let dirs = [
-            appSteamCMDDirectory.appendingPathComponent("steamapps/workshop/content/431960/\(itemId)"),
-            appSteamCMDDirectory.appendingPathComponent("steamapps/downloading/431960/\(itemId)"),
+    /// Returns bytes currently being written to the in-progress staging directory.
+    static func totalDownloadedBytes(itemId: String, debugLog: Bool = false) -> Int64 {
+        let steamBases: [URL] = [
+            appSteamCMDDirectory,
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/Steam"),
         ]
+        let downloadingSubdirs = [
+            "steamapps/downloading/431960/\(itemId)",
+            "steamapps/workshop/content/431960/\(itemId)",
+        ]
+
         var total: Int64 = 0
-        for dir in dirs {
+
+        func sumDirectory(_ dir: URL) -> Int64 {
             guard let enumerator = FileManager.default.enumerator(
-                at: dir, includingPropertiesForKeys: [.fileSizeKey], options: .skipsHiddenFiles
-            ) else { continue }
+                at: dir, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]
+            ) else {
+                if debugLog { print("[DiskScan]   \(dir.path) → NOT FOUND") }
+                return 0
+            }
+            var dirTotal: Int64 = 0
             for case let url as URL in enumerator {
-                total += Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+                guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+                else { continue }
+                let size = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+                dirTotal += size
+                if debugLog { print("[DiskScan]     file: \(url.lastPathComponent) = \(size) bytes") }
+            }
+            if debugLog { print("[DiskScan]   \(dir.path) → \(dirTotal) bytes total") }
+            return dirTotal
+        }
+
+        for base in steamBases {
+            for subdir in downloadingSubdirs {
+                let dir = base.appendingPathComponent(subdir)
+                total += sumDirectory(dir)
             }
         }
+        if debugLog { print("[DiskScan] itemId=\(itemId) grand total=\(total) bytes") }
         return total
     }
 
@@ -407,6 +424,7 @@ class SteamWorkshopService: NSObject {
         totalBytesHandler: ((Int64) -> Void)? = nil
     ) async -> Bool {
         let workingDir = URL(fileURLWithPath: steamcmdPath).deletingLastPathComponent()
+        print("[SteamCMD] downloadWithSteamCMD — path=\(steamcmdPath) workingDir=\(workingDir.path) itemId=\(itemId)")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: steamcmdPath)
         process.currentDirectoryURL = workingDir
@@ -462,9 +480,11 @@ class SteamWorkshopService: NSObject {
         guardCode: String?,
         itemId: String,
         progressHandler: ((Double) -> Void)? = nil,
-        totalBytesHandler: ((Int64) -> Void)? = nil
+        totalBytesHandler: ((Int64) -> Void)? = nil,
+        mobileConfirmHandler: (() -> Void)? = nil
     ) async -> LoginDownloadResult {
         let workingDir = URL(fileURLWithPath: steamcmdPath).deletingLastPathComponent()
+        print("[SteamCMD] downloadWithCredentials — path=\(steamcmdPath) workingDir=\(workingDir.path) itemId=\(itemId) hasGuardCode=\(guardCode != nil && !(guardCode!.isEmpty))")
 
         var args = ["+login", username, password]
         if let code = guardCode, !code.isEmpty { args.append(code) }
@@ -486,6 +506,7 @@ class SteamWorkshopService: NSObject {
             await withCheckedContinuation { (continuation: CheckedContinuation<LoginDownloadResult, Never>) in
                 // 只能 resume 一次，用 flag 保护
                 var didResume = false
+                var didCallMobileHandler = false  // prevent repeated mobileConfirmHandler calls
                 func resumeOnce(_ result: LoginDownloadResult) {
                     lock.lock()
                     guard !didResume else { lock.unlock(); return }
@@ -498,20 +519,43 @@ class SteamWorkshopService: NSObject {
 
                 // 实时读取输出：
                 // - 未提供验证码时：检测 Steam Guard 提示并立即返回，不等进程退出
-                // - 已提供验证码时：不检测关键词（steamcmd 会在输出中回显验证码，
-                //   若此时仍检测会误把回显当作新的验证码请求，导致循环弹出验证码界面）
+                //   使用累积 buffer 检测，避免关键词跨 chunk 被切断漏检
+                // - 已提供验证码时：不检测关键词（steamcmd 会在输出中回显验证码）
                 let alreadyHasCode = guardCode != nil && !(guardCode!.isEmpty)
                 pipe.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
                     guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
-                    lock.lock(); outputBuffer += str; lock.unlock()
+                    lock.lock(); outputBuffer += str; let accumulated = outputBuffer; lock.unlock()
 
                     if !alreadyHasCode {
-                        let low = str.lowercased()
-                        if low.contains("two-factor code:") || low.contains("enter the current code from your steam guard mobile authenticator") {
+                        // Check accumulated buffer so keywords split across chunks are not missed
+                        let low = accumulated.lowercased()
+
+                        // Mobile app push-confirm: only call handler once even though chunks keep arriving
+                        if !didCallMobileHandler && (
+                            low.contains("please confirm the login")
+                            || low.contains("steam mobile app on your phone")
+                            || low.contains("confirm the login in the steam mobile")
+                        ) {
+                            lock.lock(); didCallMobileHandler = true; lock.unlock()
+                            DispatchQueue.main.async { mobileConfirmHandler?() }
+                            // Do NOT kill the process — SteamCMD keeps waiting for the user to approve
+                            return
+                        }
+                        // Once mobile handler fired, skip re-checking confirm keywords on every chunk
+                        if didCallMobileHandler { return }
+
+                        // Two-factor code entry required
+                        if low.contains("two-factor code:")
+                            || low.contains("enter the current code from your steam guard mobile authenticator") {
                             resumeOnce(.needsTwoFactor); return
                         }
-                        if low.contains("steam guard code:") || (low.contains("steam guard") && !low.contains("not required")) {
+
+                        // Email Steam Guard code entry required
+                        if low.contains("steam guard code:")
+                            || low.contains("enter steam guard code")
+                            || (low.contains("steam guard") && low.contains("code") && !low.contains("not required"))
+                            || low.contains("guard code for") {
                             resumeOnce(.needsSteamGuard); return
                         }
                     }
@@ -530,9 +574,13 @@ class SteamWorkshopService: NSObject {
                     lock.lock(); let output = outputBuffer; lock.unlock()
 
                     print("[SteamCMD] exit, output length=\(output.count)")
-                    if output.count < 2000 { print(output) }
+                    print("[SteamCMD output]:\n\(output.suffix(3000))")
 
+                    // Print all scanned directories to identify where SteamCMD actually writes
+                    print("[SteamCMD] scanning for downloaded files (itemId=\(itemId)):")
+                    _ = Self.totalDownloadedBytes(itemId: itemId, debugLog: true)
                     let dir = Self.workshopItemDirectory(itemId: itemId)
+                    print("[SteamCMD] workshopItemDirectory=\(dir.path) exists=\(FileManager.default.fileExists(atPath: dir.path))")
                     if Self.findWallpaperFile(in: dir) != nil {
                         resumeOnce(.success); return
                     }
@@ -555,9 +603,13 @@ class SteamWorkshopService: NSObject {
                         }
                     } else {
                         // 未提供验证码，正常检测 Steam Guard 请求
-                        if low.contains("two-factor code:") || low.contains("enter the current code from your steam guard mobile authenticator") {
+                        if low.contains("two-factor code:")
+                            || low.contains("enter the current code from your steam guard mobile authenticator") {
                             resumeOnce(.needsTwoFactor)
-                        } else if low.contains("steam guard code:") || (low.contains("steam guard") && !low.contains("not required")) {
+                        } else if low.contains("steam guard code:")
+                            || low.contains("enter steam guard code")
+                            || (low.contains("steam guard") && low.contains("code") && !low.contains("not required"))
+                            || low.contains("guard code for") {
                             resumeOnce(.needsSteamGuard)
                         } else if low.contains("invalid password") || low.contains("failed (invalid password)") {
                             resumeOnce(.invalidCredentials)

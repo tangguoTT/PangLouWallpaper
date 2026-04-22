@@ -21,7 +21,7 @@ struct WallpaperItem: Identifiable, Codable, Hashable {
     let resolution: String
     let color: String
     let isVideo: Bool
-    let fullURL: URL
+    var fullURL: URL
     /// 轻量预览片段（上传时截取前4秒压缩生成），用于卡片悬停动态预览
     var previewURL: URL?
     let uploadedAt: Int
@@ -197,8 +197,9 @@ struct WallpaperCollection: Identifiable, Codable {
 }
 
 enum DownloadedSubTab {
-    case local         // 已下载到本地缓存
-    case localImports  // 本地导入
+    case local         // 云端下载到本地缓存
+    case workshop      // Steam Workshop 下载
+    case localImports  // 手动导入
 }
 
 // MARK: - 定时换壁纸时间段

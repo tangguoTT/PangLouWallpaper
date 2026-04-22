@@ -8,7 +8,26 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var viewModel = WallpaperViewModel()
     @AppStorage("isDarkMode") private var isDarkMode: Bool = true
+    @AppStorage("isSidebarVisible") private var isSidebarVisible: Bool = true
     @State private var showSettings = false
+
+    private var sidebarToggleButton: some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                isSidebarVisible = true
+            }
+        }) {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary.opacity(0.6))
+                .frame(width: 30, height: 30)
+                .background(Color.primary.opacity(0.07))
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+        .help("显示侧边栏")
+        .transition(.opacity)
+    }
 
     var body: some View {
         ZStack {
@@ -21,12 +40,21 @@ struct ContentView: View {
             GeometryReader { geo in
                 HStack(spacing: 0) {
                     // ── Left Sidebar ──
-                    SidebarView(viewModel: viewModel, isDarkMode: $isDarkMode, showSettings: $showSettings)
+                    if isSidebarVisible {
+                        SidebarView(
+                            viewModel: viewModel,
+                            isDarkMode: $isDarkMode,
+                            showSettings: $showSettings,
+                            isSidebarVisible: $isSidebarVisible
+                        )
+                        .transition(.move(edge: .leading))
 
-                    // Thin separator
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.06))
-                        .frame(width: 1)
+                        // Thin separator
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.06))
+                            .frame(width: 1)
+                            .transition(.move(edge: .leading))
+                    }
 
                     // ── Main Content Column ──
                     if showSettings {
@@ -35,17 +63,41 @@ struct ContentView: View {
                         let hideSearchBar = (viewModel.currentTab == .upload && viewModel.uploadMode == .pending)
                             || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
                             || viewModel.currentTab == .steamWorkshop
-                        let hideBottomBar = hideSearchBar
+                            || (viewModel.currentTab == .downloaded && viewModel.downloadedSubTab != .local)
+                        let hideBottomBar = (viewModel.currentTab == .upload && viewModel.uploadMode == .pending)
+                            || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
+                            || viewModel.currentTab == .steamWorkshop
 
                         VStack(spacing: 0) {
+                            // Top bar row: sidebar toggle (when hidden) + search bar
                             if !hideSearchBar {
-                                SearchFilterBarView(viewModel: viewModel)
-                                    .padding(.horizontal, 28)
-                                    .padding(.top, 18)
-                                    .padding(.bottom, 12)
-                                    .zIndex(10)
+                                HStack(alignment: .center, spacing: 0) {
+                                    if !isSidebarVisible {
+                                        sidebarToggleButton
+                                            .padding(.leading, 14)
+                                            .padding(.top, 18)
+                                            .padding(.bottom, 12)
+                                    }
+                                    SearchFilterBarView(viewModel: viewModel)
+                                        .padding(.leading, isSidebarVisible ? 28 : 10)
+                                        .padding(.trailing, 28)
+                                        .padding(.top, 18)
+                                        .padding(.bottom, 12)
+                                }
+                                .zIndex(10)
                             } else {
-                                Color.clear.frame(height: 18)
+                                // No search bar: show just the toggle button row when sidebar hidden
+                                if !isSidebarVisible {
+                                    HStack {
+                                        sidebarToggleButton
+                                        Spacer()
+                                    }
+                                    .padding(.leading, 14)
+                                    .padding(.top, 14)
+                                    .padding(.bottom, 4)
+                                } else {
+                                    Color.clear.frame(height: 18)
+                                }
                             }
 
                             WallpaperGridView(viewModel: viewModel)
@@ -72,6 +124,7 @@ struct ContentView: View {
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isSidebarVisible)
                 .disabled(
                     viewModel.showLoginSheet || viewModel.showAbout ||
                     viewModel.showUserSpace || viewModel.previewItem != nil ||

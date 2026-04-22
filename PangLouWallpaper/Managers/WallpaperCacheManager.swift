@@ -30,6 +30,20 @@ class WallpaperCacheManager {
 
     private(set) var cacheDirectory: URL
 
+    /// 云端下载文件存放目录
+    var cloudDirectory: URL {
+        let url = cacheDirectory.appendingPathComponent("cloud")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// Workshop 下载文件存放目录（每个 item 一个子目录）
+    var workshopDirectory: URL {
+        let url = cacheDirectory.appendingPathComponent("workshop")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
     private init() {
         if let savedPath = UserDefaults.standard.string(forKey: WallpaperCacheManager.customCacheDirKey) {
             let url = URL(fileURLWithPath: savedPath)
@@ -40,10 +54,34 @@ class WallpaperCacheManager {
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             cacheDirectory = url
         }
+        migrateRootFilesToCloud()
+    }
+
+    /// 首次升级迁移：把旧版本平铺在根目录的云端缓存文件移入 cloud/ 子目录
+    private func migrateRootFilesToCloud() {
+        let cloud = cacheDirectory.appendingPathComponent("cloud")
+        try? FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
+        let skipNames: Set<String> = ["cloud", "workshop", "local_imports", "steamcmd"]
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: cacheDirectory, includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return }
+        for entry in entries {
+            if skipNames.contains(entry.lastPathComponent) { continue }
+            let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            guard !isDir else { continue }
+            let dest = cloud.appendingPathComponent(entry.lastPathComponent)
+            if !FileManager.default.fileExists(atPath: dest.path) {
+                try? FileManager.default.moveItem(at: entry, to: dest)
+            }
+        }
     }
 
     func setCacheDirectory(_ url: URL) throws {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        // 预先建好三个子目录
+        try fileManager.createDirectory(at: url.appendingPathComponent("cloud"),    withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: url.appendingPathComponent("workshop"), withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: url.appendingPathComponent("local_imports"), withIntermediateDirectories: true)
         UserDefaults.standard.set(url.path, forKey: WallpaperCacheManager.customCacheDirKey)
         cacheDirectory = url
     }
@@ -61,24 +99,24 @@ class WallpaperCacheManager {
         return hashed.compactMap { String(format: "%02x", $0) }.joined()
     }
 
-    /// 已下载壁纸的完整缓存路径（不含 thumb_ 前缀）
+    /// 已下载壁纸的完整缓存路径（存于 cloud/ 子目录）
     func getLocalPath(for url: URL) -> URL {
         let key = stableHash(for: url.absoluteString)
         let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-        return cacheDirectory.appendingPathComponent("\(key).\(ext)")
+        return cloudDirectory.appendingPathComponent("\(key).\(ext)")
     }
 
-    /// 缩略图专用缓存路径（thumb_ 前缀，与完整下载文件严格区分）
+    /// 缩略图专用缓存路径（thumb_ 前缀，cloud/ 子目录）
     private func getThumbnailPath(for url: URL) -> URL {
         let key = stableHash(for: url.absoluteString)
         let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-        return cacheDirectory.appendingPathComponent("thumb_\(key).\(ext)")
+        return cloudDirectory.appendingPathComponent("thumb_\(key).\(ext)")
     }
 
-    /// 预览视频专用缓存路径（preview_ 前缀）
+    /// 预览视频专用缓存路径（preview_ 前缀，cloud/ 子目录）
     func getPreviewCachePath(for url: URL) -> URL {
         let key = stableHash(for: url.absoluteString)
-        return cacheDirectory.appendingPathComponent("preview_\(key).mp4")
+        return cloudDirectory.appendingPathComponent("preview_\(key).mp4")
     }
 
     /// 下载并缓存预览视频，返回本地路径；已缓存则直接返回

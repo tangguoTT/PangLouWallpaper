@@ -10,11 +10,12 @@ import Security
 
 struct SteamWorkshopView: View {
     @ObservedObject var viewModel: WallpaperViewModel
+    @Binding var isSidebarVisible: Bool
 
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                WorkshopSearchBar(viewModel: viewModel)
+                WorkshopSearchBar(viewModel: viewModel, isSidebarVisible: $isSidebarVisible)
                     .padding(.horizontal, 28)
                     .padding(.top, 18)
                     .padding(.bottom, 12)
@@ -85,8 +86,9 @@ struct SteamWorkshopView: View {
 
 struct WorkshopSearchBar: View {
     @ObservedObject var viewModel: WallpaperViewModel
+    @Binding var isSidebarVisible: Bool
     @AppStorage("isDarkMode") private var isDarkMode: Bool = true
-    
+
     let filters = [
         ("全部", "全部类型"),
         ("Video", "视频壁纸"),
@@ -95,41 +97,106 @@ struct WorkshopSearchBar: View {
         ("Image", "静态图片")
     ]
 
+    private let sortOptions: [(String, String, String)] = [
+        ("3", "热门趋势", "flame"),
+        ("1", "最新发布", "clock"),
+    ]
+
+    private var currentSortLabel: String {
+        sortOptions.first { $0.0 == viewModel.workshopSortType }?.1 ?? "投票数排名"
+    }
+
+    private var isNewestSort: Bool { viewModel.workshopSortType == "1" }
+
     var body: some View {
         VStack(spacing: 16) {
             // 搜索框层
             HStack(spacing: 12) {
+                // Sidebar expand button (shown inline when sidebar is hidden)
+                if !isSidebarVisible {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            isSidebarVisible = true
+                        }
+                    }) {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.primary.opacity(0.6))
+                            .frame(width: 30, height: 30)
+                            .background(Color.primary.opacity(0.07))
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .help("显示侧边栏")
+                    .transition(.opacity)
+                }
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(isNewestSort ? .secondary.opacity(0.5) : .secondary)
                         .font(.system(size: 14))
-                    TextField("搜索 Wallpaper Engine 创意工坊…", text: $viewModel.workshopSearchText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .onSubmit {
-                            viewModel.workshopCurrentPage = 0
-                            viewModel.workshopSteamCursor = 0
-                            viewModel.workshopDisplayPageSteamStart = [:]
-                            viewModel.fetchWorkshopItems()
+                    if isNewestSort {
+                        Text("最新发布模式不支持关键词搜索")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary.opacity(0.5))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        TextField("搜索 Wallpaper Engine 创意工坊…", text: $viewModel.workshopSearchText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .onSubmit {
+                                viewModel.workshopCurrentPage = 0
+                                viewModel.workshopTotalResults = 0
+                                viewModel.fetchWorkshopItems()
+                            }
+                        if !viewModel.workshopSearchText.isEmpty {
+                            Button(action: {
+                                viewModel.workshopSearchText = ""
+                                viewModel.workshopCurrentPage = 0
+                                viewModel.workshopTotalResults = 0
+                                viewModel.fetchWorkshopItems()
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 13))
+                            }.buttonStyle(.plain)
                         }
-                    if !viewModel.workshopSearchText.isEmpty {
-                        Button(action: {
-                            viewModel.workshopSearchText = ""
-                            viewModel.workshopCurrentPage = 0
-                            viewModel.workshopSteamCursor = 0
-                            viewModel.workshopDisplayPageSteamStart = [:]
-                            viewModel.fetchWorkshopItems()
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                                .font(.system(size: 13))
-                        }.buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
                 .cornerRadius(12)
+
+                // 排序下拉菜单
+                Menu {
+                    ForEach(sortOptions, id: \.0) { value, label, icon in
+                        Button(action: {
+                            if value == "1" && !viewModel.workshopSearchText.isEmpty {
+                                viewModel.workshopSearchText = ""
+                            }
+                            viewModel.workshopSortType = value
+                        }) {
+                            Label(label, systemImage: icon)
+                            if viewModel.workshopSortType == value {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 12, weight: .medium))
+                        Text(currentSortLabel)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundColor(.primary.opacity(0.7))
+                    .padding(.horizontal, 10)
+                    .frame(height: 36)
+                    .background(isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
+                    .cornerRadius(10)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
 
                 Button(action: {
                     viewModel.workshopCurrentPage = 0
@@ -197,8 +264,8 @@ struct WorkshopGridView: View {
     @ObservedObject var viewModel: WallpaperViewModel
 
     var body: some View {
+        let items = viewModel.workshopItems
         VStack(spacing: 15) {
-            let items = viewModel.workshopItems
             ForEach(0..<3, id: \.self) { row in
                 HStack(spacing: 15) {
                     ForEach(0..<4, id: \.self) { col in
@@ -206,6 +273,7 @@ struct WorkshopGridView: View {
                         if index < items.count {
                             WorkshopItemCard(item: items[index], viewModel: viewModel)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .clipped()
                         } else {
                             Color.clear
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -231,31 +299,56 @@ struct WorkshopItemCard: View {
         viewModel.workshopDownloadStates[item.id]
     }
 
+    private var isDownloading: Bool {
+        if case .downloading = downloadState { return true }
+        return false
+    }
+
     var body: some View {
         ZStack {
             // 背景图片
             WorkshopCachedImage(url: item.previewURL)
 
-            // 现代化毛玻璃底部
+            // 毛玻璃底部信息栏（标题 + 文件大小/类型 + 下载进度条）
             VStack(spacing: 0) {
                 Spacer()
-                HStack {
-                    Text(item.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    Spacer()
+                VStack(alignment: .leading, spacing: 0) {
+                    // 标题行
+                    HStack {
+                        Text(item.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    // 文件信息行（类型 + 大小）
+                    HStack(spacing: 8) {
+                        let wt = item.weType
+                        Label(wt.displayName, systemImage: wt.systemImage)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                        if item.fileSize > 0 {
+                            let mb = Double(item.fileSize) / (1024.0 * 1024.0)
+                            Text(mb >= 1024 ? String(format: "%.1f GB", mb / 1024) : String(format: "%.0f MB", mb))
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 3)
+                    .padding(.bottom, 8)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
                 .background(.ultraThinMaterial)
             }
 
-            // Type badge (top-right)
-            if item.weType != .unknown || !item.tags.isEmpty {
-                VStack {
-                    HStack {
-                        Spacer()
+            // 类型标签（右上角，始终显示）
+            VStack {
+                HStack {
+                    Spacer()
+                    if item.weType != .unknown || !item.tags.isEmpty {
                         let wt = item.weType
                         Label(wt.displayName, systemImage: wt.systemImage)
                             .font(.system(size: 10, weight: .bold))
@@ -266,7 +359,21 @@ struct WorkshopItemCard: View {
                             .padding(8)
                             .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
                     }
-                    Spacer()
+                }
+                Spacer()
+            }
+
+            // 下载中居中覆盖层（常驻，不需要 hover）
+            if isDownloading && !isHovered {
+                Color.black.opacity(0.45)
+                VStack(spacing: 8) {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                        .scaleEffect(1.2)
+                    Text("下载中")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
                 }
             }
 
@@ -287,10 +394,7 @@ struct WorkshopItemCard: View {
             }
         }
         .onAppear {
-            let dir = SteamWorkshopService.workshopItemDirectory(itemId: item.id)
-            if let file = SteamWorkshopService.findWallpaperFile(in: dir) {
-                viewModel.workshopDownloadStates[item.id] = .done(file)
-            }
+            viewModel.restoreWorkshopDownloadState(for: item)
         }
     }
 
@@ -308,7 +412,7 @@ struct WorkshopItemCard: View {
             }.buttonStyle(.plain)
 
         case .downloading:
-            WorkshopCardDownloadView(itemId: item.id, viewModel: viewModel)
+            WorkshopCardDownloadView(item: item, viewModel: viewModel)
 
         case .failed:
             VStack(spacing: 8) {
@@ -345,47 +449,113 @@ struct WorkshopItemCard: View {
 
 struct WorkshopPaginationBar: View {
     @ObservedObject var viewModel: WallpaperViewModel
+    @State private var jumpText = ""
+
+    private var cur: Int { viewModel.workshopCurrentPage }
+    private var isFiltered: Bool { viewModel.workshopSelectedType != "全部" }
+    private var totalPages: Int {
+        guard viewModel.workshopTotalResults > 0 else { return 0 }
+        return max(1, Int(ceil(Double(viewModel.workshopTotalResults) / Double(viewModel.workshopItemsPerPage))))
+    }
+
+    private func go(_ page: Int) {
+        viewModel.workshopCurrentPage = page
+        viewModel.fetchWorkshopItems()
+    }
 
     var body: some View {
-        HStack {
-            Button(action: {
-                guard viewModel.workshopCurrentPage > 0 else { return }
-                viewModel.workshopCurrentPage -= 1
-                viewModel.fetchWorkshopItems()
-            }) {
+        HStack(spacing: 12) {
+            // Previous
+            Button(action: { go(cur - 1) }) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(viewModel.workshopCurrentPage > 0 ? .primary : .primary.opacity(0.25))
-                    .frame(width: 32, height: 32)
-                    .background(Color.primary.opacity(0.07))
-                    .cornerRadius(8)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(cur == 0 ? .primary.opacity(0.25) : .primary)
+                    .frame(width: 28, height: 28)
+                    .background(Color.primary.opacity(0.05))
+                    .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(viewModel.workshopCurrentPage == 0)
+            .disabled(cur == 0)
 
-            Spacer()
+            // Page number circles
+            HStack(spacing: 6) {
+                if cur > 1 {
+                    WorkshopPageCircle(number: 1, isCurrent: false) { go(0) }
+                }
+                if cur > 2 {
+                    Text("…").foregroundColor(.primary.opacity(0.35)).font(.system(size: 13))
+                }
+                if cur > 0 {
+                    WorkshopPageCircle(number: cur, isCurrent: false) { go(cur - 1) }
+                }
+                WorkshopPageCircle(number: cur + 1, isCurrent: true) { }
+                if totalPages > 0, cur + 2 <= totalPages - 1 {
+                    Text("…").foregroundColor(.primary.opacity(0.35)).font(.system(size: 13))
+                    WorkshopPageCircle(number: totalPages, isCurrent: false) { go(totalPages - 1) }
+                } else if totalPages > 0, cur + 2 == totalPages {
+                    WorkshopPageCircle(number: totalPages, isCurrent: false) { go(totalPages - 1) }
+                }
+            }
 
-            Text("第 \(viewModel.workshopCurrentPage + 1) 页")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-
-            Spacer()
-
-            Button(action: {
-                guard viewModel.workshopHasNextPage else { return }
-                viewModel.workshopCurrentPage += 1
-                viewModel.fetchWorkshopItems()
-            }) {
+            // Next
+            Button(action: { go(cur + 1) }) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(viewModel.workshopHasNextPage ? .primary : .primary.opacity(0.25))
-                    .frame(width: 32, height: 32)
-                    .background(Color.primary.opacity(0.07))
-                    .cornerRadius(8)
+                    .frame(width: 28, height: 28)
+                    .background(Color.primary.opacity(0.05))
+                    .clipShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(!viewModel.workshopHasNextPage)
+
+            if totalPages > 5 {
+                HStack(spacing: 6) {
+                    Text("跳转")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    TextField("", text: $jumpText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .multilineTextAlignment(.center)
+                        .frame(width: 34, height: 26)
+                        .background(Color.primary.opacity(0.05))
+                        .cornerRadius(6)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.1), lineWidth: 1))
+                        .onSubmit {
+                            if let p = Int(jumpText), p >= 1, p <= totalPages { go(p - 1); jumpText = "" }
+                        }
+                    Button(action: {
+                        if let p = Int(jumpText), p >= 1, p <= totalPages { go(p - 1); jumpText = "" }
+                    }) {
+                        Text("Go").font(.system(size: 12, weight: .bold)).foregroundColor(.accentColor)
+                    }.buttonStyle(.plain)
+                }
+            }
         }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// 自适应宽度的页码按钮：小数字用圆形，大数字（≥100）用胶囊避免溢出
+private struct WorkshopPageCircle: View {
+    let number: Int
+    let isCurrent: Bool
+    let action: () -> Void
+
+    private var fg: Color { isCurrent ? Color.accentColor : Color.primary.opacity(0.7) }
+    private var bg: Color { isCurrent ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.05) }
+
+    var body: some View {
+        Button(action: action) {
+            Text("\(number)")
+                .font(.system(size: 12, weight: isCurrent ? .bold : .medium))
+                .foregroundColor(fg)
+                .padding(.horizontal, number >= 100 ? 8 : 0)
+                .frame(width: number >= 100 ? nil : 28, height: 28)
+                .background(bg)
+                .clipShape(number >= 100 ? AnyShape(Capsule()) : AnyShape(Circle()))
+        }.buttonStyle(.plain)
     }
 }
 
@@ -401,7 +571,7 @@ struct WorkshopPreviewOverlay: View {
     }
 
     private var largePreviewURL: URL? {
-        item.previewURL?.steamPreview(width: 1280, height: 720)
+        item.previewURL
     }
 
     var body: some View {
@@ -501,12 +671,7 @@ struct WorkshopPreviewOverlay: View {
                 .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 10)
         )
         .onAppear {
-            // Auto-detect local file on open
-            let dir = SteamWorkshopService.workshopItemDirectory(itemId: item.id)
-            if let file = SteamWorkshopService.findWallpaperFile(in: dir),
-               viewModel.workshopDownloadStates[item.id] == nil {
-                viewModel.workshopDownloadStates[item.id] = .done(file)
-            }
+            viewModel.restoreWorkshopDownloadState(for: item)
         }
     }
 
@@ -828,9 +993,18 @@ struct SteamLoginSheet: View {
 
 struct WorkshopCachedImage: View {
     let url: URL?
-    @State private var image: NSImage? = nil
+    @State private var image: NSImage?
     @State private var failed = false
     @State private var retryCount = 0
+
+    init(url: URL?) {
+        self.url = url
+        if let url, let cached = SteamWorkshopService.imageMemCache.object(forKey: url.absoluteString as NSString) {
+            _image = State(initialValue: cached)
+        } else {
+            _image = State(initialValue: nil)
+        }
+    }
 
     var body: some View {
         Color.primary.opacity(0.06)
@@ -892,54 +1066,49 @@ struct WorkshopCachedImage: View {
     }
 }
 
-// MARK: - Card Downloading View (磁盘字节实时进度，用于卡片 hover 状态)
+// MARK: - Card Downloading View (hover 状态下载中)
 
 struct WorkshopCardDownloadView: View {
-    let itemId: String
+    let item: SteamWorkshopItem
     @ObservedObject var viewModel: WallpaperViewModel
-    @State private var diskBytes: Int64 = 0
+    @State private var elapsed: Int = 0
+    @State private var timer: Timer? = nil
 
-    var body: some View {
-        VStack(spacing: 6) {
-            if let pct = viewModel.workshopDownloadProgress[itemId], pct > 0 {
-                Text("\(Int(pct * 100))%")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white)
-                ProgressView(value: pct)
-                    .progressViewStyle(.linear)
-                    .tint(.white)
-                    .frame(width: 90)
-            } else if diskBytes > 0 {
-                ProgressView()
-                    .progressViewStyle(.linear)
-                    .tint(.white)
-                    .frame(width: 90)
-                Text(formattedBytes(diskBytes))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.9))
-            } else {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .scaleEffect(0.8)
-                    .tint(.white)
-            }
-            Text("下载中…")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.8))
-        }
-        .task {
-            while !Task.isCancelled {
-                let bytes = SteamWorkshopService.totalDownloadedBytes(itemId: itemId)
-                if bytes > diskBytes { await MainActor.run { diskBytes = bytes } }
-                try? await Task.sleep(nanoseconds: 500_000_000)
-            }
-        }
+    private var elapsedText: String {
+        elapsed < 60 ? "\(elapsed) 秒" : "\(elapsed / 60) 分 \(elapsed % 60) 秒"
     }
 
-    private func formattedBytes(_ b: Int64) -> String {
-        let mb = Double(b) / (1024 * 1024)
-        if mb >= 1 { return String(format: "%.1f MB", mb) }
-        return String(format: "%.0f KB", Double(b) / 1024)
+    var body: some View {
+        VStack(spacing: 8) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .tint(.white)
+                .scaleEffect(1.2)
+            Text("下载中")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white)
+            if elapsed > 0 {
+                Text("已用时 \(elapsedText)")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+        }
+        .onAppear { startTimer() }
+        .onDisappear { timer?.invalidate() }
+    }
+
+    private func startTimer() {
+        if let start = viewModel.workshopDownloadStartTime[item.id] {
+            elapsed = Int(Date().timeIntervalSince(start))
+        }
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            if let start = viewModel.workshopDownloadStartTime[item.id] {
+                elapsed = Int(Date().timeIntervalSince(start))
+            } else {
+                elapsed += 1
+            }
+        }
+        RunLoop.main.add(timer!, forMode: .common)
     }
 }
 
@@ -949,105 +1118,42 @@ struct WorkshopDownloadProgressView: View {
     let item: SteamWorkshopItem
     @ObservedObject var viewModel: WallpaperViewModel
     @State private var elapsed: Int = 0
-    @State private var downloadedBytes: Int64 = 0
     @State private var timer: Timer? = nil
-
-    private var totalBytes: Int64 {
-        // 1. SteamCMD 实时上报的精确大小
-        if let t = viewModel.workshopTotalBytes[item.id], t > 0 { return t }
-        // 2. workshopItems 中的最新 fileSize（fetchItemDetails 异步回填，item 是值类型副本可能已过期）
-        let liveSize = viewModel.workshopItems.first(where: { $0.id == item.id })?.fileSize ?? 0
-        if liveSize > 0 { return Int64(liveSize) }
-        // 3. 降级：使用 item 自带的 fileSize（可能为 0）
-        return Int64(item.fileSize)
-    }
-
-    private var calculatedProgress: Double? {
-        // 1. 如果 SteamCMD 有正常打印进度，直接用
-        if let p = viewModel.workshopDownloadProgress[item.id], p > 0 { return p }
-        // 2. 核心后备方案：通过硬盘文件大小 / API告诉的总大小 自己算进度！
-        let total = totalBytes
-        if total > 0 && downloadedBytes > 0 {
-            return min(1.0, Double(downloadedBytes) / Double(total))
-        }
-        return nil
-    }
 
     private var elapsedText: String {
         if elapsed < 60 { return "\(elapsed) 秒" }
         return "\(elapsed / 60) 分 \(elapsed % 60) 秒"
     }
 
-    private func formattedBytes(_ b: Int64) -> String {
+    private func formattedBytes(_ b: Int) -> String {
         if b < 1024 * 1024 { return String(format: "%.0f KB", Double(b) / 1024) }
         if b < 1024 * 1024 * 1024 { return String(format: "%.1f MB", Double(b) / (1024 * 1024)) }
         return String(format: "%.2f GB", Double(b) / (1024 * 1024 * 1024))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let pct = calculatedProgress {
-                // 完美显示进度条
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("正在下载")
-                            .font(.system(size: 13, weight: .medium))
-                        Spacer()
-                        Text("\(Int(pct * 100))%")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.accentColor)
-                    }
-                    ProgressView(value: pct)
-                        .progressViewStyle(.linear)
-                        .tint(.accentColor)
-                        .frame(width: 240)
-                    HStack {
-                        if totalBytes > 0 {
-                            Text("\(formattedBytes(downloadedBytes)) / \(formattedBytes(totalBytes))")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("已下载 \(formattedBytes(downloadedBytes))")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Text("已用时 \(elapsedText)")
+        HStack(spacing: 10) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .tint(.primary)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("正在下载")
+                        .font(.system(size: 13, weight: .medium))
+                    if elapsed > 0 {
+                        Text("· 已用时 \(elapsedText)")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
                 }
-            } else if downloadedBytes > 0 {
-                // 已有磁盘写入但不知道总大小时，显示不定式进度条 + 已下载量
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("正在下载")
-                            .font(.system(size: 13, weight: .medium))
-                        Spacer()
-                        Text("已用时 \(elapsedText)")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .tint(.accentColor)
-                        .frame(width: 240)
-                    Text("已下载 \(formattedBytes(downloadedBytes))（总大小未知）")
+                if item.fileSize > 0 {
+                    Text("文件大小 \(formattedBytes(item.fileSize))，下载完成后自动导入")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
-                }
-            } else {
-                // 下载刚刚开始，尚无任何磁盘写入
-                HStack(spacing: 10) {
-                    ProgressView().progressViewStyle(.circular).scaleEffect(0.85)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("正在建立 Steam 链接…")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.primary)
-                        Text("已用时 \(elapsedText)")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
+                } else {
+                    Text("下载完成后自动导入")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
             }
         }
@@ -1060,15 +1166,12 @@ struct WorkshopDownloadProgressView: View {
         if let start = viewModel.workshopDownloadStartTime[item.id] {
             elapsed = Int(Date().timeIntervalSince(start))
         }
-        // 每 0.5 秒查一次本地临时文件夹写入了多少
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if let start = viewModel.workshopDownloadStartTime[item.id] {
                 elapsed = Int(Date().timeIntervalSince(start))
             } else {
                 elapsed += 1
             }
-            let bytes = SteamWorkshopService.totalDownloadedBytes(itemId: item.id)
-            if bytes > downloadedBytes { downloadedBytes = bytes }
         }
         RunLoop.main.add(timer!, forMode: .common)
     }

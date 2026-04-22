@@ -16,6 +16,24 @@ enum UploadMode: String {
     case manage  = "云端壁纸管理"
 }
 
+/// 递归统计目录占用字节数（目录不存在时返回 0）
+private func directorySize(at url: URL) -> Int64 {
+    guard let enumerator = FileManager.default.enumerator(
+        at: url,
+        includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+        options: [.skipsHiddenFiles]
+    ) else { return 0 }
+    var total: Int64 = 0
+    for case let fileURL as URL in enumerator {
+        if let vals = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+           vals.isRegularFile == true,
+           let size = vals.fileSize {
+            total += Int64(size)
+        }
+    }
+    return total
+}
+
 class WallpaperViewModel: ObservableObject {
 
     // MARK: - 全量数据（用于已下载/轮播等本地标签页）
@@ -55,7 +73,13 @@ class WallpaperViewModel: ObservableObject {
     @Published var isEnergySavingEnabled: Bool = UserDefaults.standard.bool(forKey: "energySavingEnabled") {
         didSet { DesktopVideoManager.shared.isEnergySavingEnabled = isEnergySavingEnabled }
     }
+    @Published var videoVolume: Float = UserDefaults.standard.float(forKey: "videoVolume") {
+        didSet { DesktopVideoManager.shared.videoVolume = videoVolume }
+    }
     @Published var cacheSizeString: String = "0 MB"
+    @Published var cloudCacheSizeString: String = "计算中…"
+    @Published var workshopCacheSizeString: String = "计算中…"
+    @Published var localImportSizeString: String = "计算中…"
     @Published var cacheVersion: Int = 0
     @Published var cacheDirectoryPath: String = WallpaperCacheManager.shared.cacheDirectory.path
 
@@ -252,9 +276,17 @@ class WallpaperViewModel: ObservableObject {
             return searchResults
 
         case .downloaded:
-            if downloadedSubTab == .localImports { return localImports }
-            let base = allWallpapers.filter { downloadedWallpaperIds.contains($0.id) }
-            return applyLocalFilters(to: base)
+            switch downloadedSubTab {
+            case .localImports:
+                let ids = workshopImportIds
+                return localImports.filter { !ids.contains($0.id) }
+            case .workshop:
+                let ids = workshopImportIds
+                return localImports.filter { ids.contains($0.id) }
+            case .local:
+                let base = allWallpapers.filter { downloadedWallpaperIds.contains($0.id) }
+                return applyLocalFilters(to: base)
+            }
 
         case .slideshow:
             let base = allWallpapers.filter {
@@ -324,6 +356,8 @@ class WallpaperViewModel: ObservableObject {
     // MARK: - Init
 
     init() {
+        // 👇 新增这一行：全局强制关闭 macOS 的“退出时保留窗口”特性
+        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
         if #available(macOS 13.0, *) { self.isAutoStartEnabled = SMAppService.mainApp.status == .enabled }
         calculateCacheSize()
         self.isSlideshowEnabled = UserDefaults.standard.bool(forKey: "isSlideshowEnabled")
@@ -519,10 +553,10 @@ class WallpaperViewModel: ObservableObject {
     }
 
     func randomWallpaper() {
-        let downloaded = allWallpapers.filter {
-            FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: $0.fullURL).path)
-        }
-        let pool = downloaded.isEmpty ? allWallpapers : downloaded
+        // 使用已缓存的 downloadedWallpaperIds，避免在主线程同步调用 fileExists
+        let pool = downloadedWallpaperIds.isEmpty
+            ? allWallpapers
+            : allWallpapers.filter { downloadedWallpaperIds.contains($0.id) }
         guard let item = pool.randomElement() else { statusMessage = "⚠️ 暂无可用壁纸"; return }
         setWallpaper(item: item)
     }
@@ -541,7 +575,8 @@ class WallpaperViewModel: ObservableObject {
             if addLocalImport(from: url) { added += 1 }
         }
         guard added > 0 else { return }
-        statusMessage = "✅ 已导入 \(added) 张壁纸，可在个人中心查看"
+        calculateCacheSize()
+        statusMessage = "✅ 已导入 \(added) 张壁纸，可在已下载壁纸-本地导入查看"
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             if self.statusMessage.hasPrefix("✅ 已导入") { self.statusMessage = "" }
         }
@@ -572,33 +607,72 @@ class WallpaperViewModel: ObservableObject {
         return true
     }
 
-    /// Workshop 下载完成后直接引用原始路径，不读取文件内容（避免大文件 OOM）。
     @discardableResult
-    private func addWorkshopImport(itemId: String, fileURL: URL) -> Bool {
-        guard !localImports.contains(where: { $0.id == itemId || $0.fullURL == fileURL }) else { return false }
+    private func addWorkshopImport(itemId: String, fileURL: URL) -> URL {
         let ext = fileURL.pathExtension.isEmpty ? "mp4" : fileURL.pathExtension
         let isVideo = ["mp4", "mov", "m4v", "avi", "webm"].contains(ext.lowercased())
         let title = workshopItems.first(where: { $0.id == itemId })?.title ?? ""
-        let item = WallpaperItem(
-            id: itemId,
-            title: title,
-            isVideo: isVideo,
-            fullURL: fileURL,
-            uploadedAt: Int(Date().timeIntervalSince1970)
-        )
-        localImports.insert(item, at: 0)
-        saveLocalImports()
-        return true
+
+        let destItemDir = WallpaperCacheManager.shared.workshopDirectory
+            .appendingPathComponent(itemId)
+        let destFileURL = destItemDir.appendingPathComponent(fileURL.lastPathComponent)
+
+        let actualURL: URL
+        if FileManager.default.fileExists(atPath: destFileURL.path) {
+            // Already moved in a previous session
+            actualURL = destFileURL
+        } else {
+            // Move the entire SteamCMD item directory so web wallpaper assets come along
+            let srcItemDir = fileURL.deletingLastPathComponent()
+            do {
+                // Ensure parent exists but destItemDir itself must NOT exist for moveItem
+                try FileManager.default.createDirectory(
+                    at: destItemDir.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try FileManager.default.moveItem(at: srcItemDir, to: destItemDir)
+                actualURL = destFileURL
+            } catch {
+                actualURL = fileURL   // fallback: keep original path
+            }
+        }
+
+        // Only insert if not already tracked
+        if !localImports.contains(where: { $0.id == itemId }) {
+            let item = WallpaperItem(
+                id: itemId,
+                title: title,
+                isVideo: isVideo,
+                fullURL: actualURL,
+                uploadedAt: Int(Date().timeIntervalSince1970)
+            )
+            localImports.insert(item, at: 0)
+            var ids = workshopImportIds
+            ids.insert(itemId)
+            workshopImportIds = ids
+            saveLocalImports()
+        }
+        return actualURL
     }
 
     func deleteLocalImport(_ item: WallpaperItem) {
-        if item.fullURL.isFileURL {
+        if workshopImportIds.contains(item.id) {
+            // For workshop items: remove the entire app-managed directory (has all assets)
+            let appItemDir = WallpaperCacheManager.shared.workshopDirectory
+                .appendingPathComponent(item.id)
+            try? FileManager.default.removeItem(at: appItemDir)
+            // Also clean up the SteamCMD content dir in case the move failed and files are still there
+            let steamDir = SteamWorkshopService.workshopItemDirectory(itemId: item.id)
+            try? FileManager.default.removeItem(at: steamDir)
+        } else if item.fullURL.isFileURL {
             try? FileManager.default.removeItem(at: item.fullURL)
         }
         localImports.removeAll { $0.id == item.id }
-        // 同步清除 Workshop 下载状态，避免卡片仍显示"设为壁纸"按钮指向已删除的文件
+        var ids = workshopImportIds
+        ids.remove(item.id)
+        workshopImportIds = ids
         workshopDownloadStates.removeValue(forKey: item.id)
         saveLocalImports()
+        calculateCacheSize()
     }
 
     private var localImportsDirectory: URL {
@@ -607,12 +681,54 @@ class WallpaperViewModel: ObservableObject {
         return dir
     }
 
+    // MARK: - Workshop 来源 ID 集合（持久化，用于与手动导入区分）
+
+    private var workshopImportIds: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: "workshopImportIds") ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: "workshopImportIds") }
+    }
+
+    func isWorkshopImport(_ item: WallpaperItem) -> Bool {
+        workshopImportIds.contains(item.id)
+    }
+
     private func loadLocalImports() {
         guard let data = UserDefaults.standard.data(forKey: "localImports"),
               let items = try? JSONDecoder().decode([WallpaperItem].self, from: data)
         else { return }
-        // 过滤掉文件已被删除的条目
-        localImports = items.filter { FileManager.default.fileExists(atPath: $0.fullURL.path) }
+        var valid = items.filter { FileManager.default.fileExists(atPath: $0.fullURL.path) }
+
+        // 迁移旧数据：若 workshopImportIds 为空，通过路径特征识别已有的 Workshop 条目
+        if workshopImportIds.isEmpty {
+            let detected = valid.filter { $0.fullURL.path.contains("steamapps/workshop") }
+            if !detected.isEmpty {
+                workshopImportIds = Set(detected.map { $0.id })
+            }
+        }
+
+        // 迁移 Workshop 条目到统一 workshop/ 目录
+        let workshopIds = workshopImportIds
+        var needsSave = false
+        for i in valid.indices {
+            guard workshopIds.contains(valid[i].id) else { continue }
+            let item = valid[i]
+            let workshopItemDir = WallpaperCacheManager.shared.workshopDirectory
+                .appendingPathComponent(item.id)
+            // 已经在目标目录则跳过
+            if item.fullURL.path.hasPrefix(workshopItemDir.path) { continue }
+            try? FileManager.default.createDirectory(at: workshopItemDir, withIntermediateDirectories: true)
+            let dest = workshopItemDir.appendingPathComponent(item.fullURL.lastPathComponent)
+            if !FileManager.default.fileExists(atPath: dest.path) {
+                try? FileManager.default.moveItem(at: item.fullURL, to: dest)
+            }
+            if FileManager.default.fileExists(atPath: dest.path) {
+                valid[i].fullURL = dest
+                needsSave = true
+            }
+        }
+
+        localImports = valid
+        if needsSave { saveLocalImports() }
     }
 
     private func saveLocalImports() {
@@ -824,6 +940,10 @@ class WallpaperViewModel: ObservableObject {
                 try await MeilisearchService.shared.updateDocuments([updatedItem])
                 await MainActor.run {
                     self.allWallpapers = newWallpapers
+                    // 同步更新 searchResults，避免「电脑壁纸」Tab 卡片显示旧元数据
+                    if let srIdx = self.searchResults.firstIndex(where: { $0.id == updatedItem.id }) {
+                        self.searchResults[srIdx] = updatedItem
+                    }
                     self.editingWallpaper = nil
                     self.statusMessage = "✅ 属性修改成功！"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
@@ -1318,12 +1438,10 @@ class WallpaperViewModel: ObservableObject {
 
     func clearCache() {
         let currentPath = UserDefaults.standard.string(forKey: "LastWallpaperPath") ?? ""
-        if let files = try? FileManager.default.contentsOfDirectory(
-            at: WallpaperCacheManager.shared.cacheDirectory,
-            includingPropertiesForKeys: nil
-        ) {
+        let cloudDir = WallpaperCacheManager.shared.cloudDirectory
+        if let files = try? FileManager.default.contentsOfDirectory(at: cloudDir, includingPropertiesForKeys: nil) {
             for file in files {
-                if file.path != currentPath && file.lastPathComponent != "lockscreen_sync.jpg" {
+                if file.path != currentPath {
                     try? FileManager.default.removeItem(at: file)
                 }
             }
@@ -1360,23 +1478,25 @@ class WallpaperViewModel: ObservableObject {
     }
 
     func calculateCacheSize() {
-        // 在后台线程枚举目录，避免阻塞主线程
-        let cacheDir = WallpaperCacheManager.shared.cacheDirectory
+        let cloudDir      = WallpaperCacheManager.shared.cloudDirectory
+        let workshopDir   = WallpaperCacheManager.shared.workshopDirectory
+        let localImportsDir = WallpaperCacheManager.shared.cacheDirectory
+            .appendingPathComponent("local_imports")
+
         Task.detached(priority: .background) { [weak self] in
-            var totalSize: Int64 = 0
-            if let files = try? FileManager.default.contentsOfDirectory(
-                at: cacheDir, includingPropertiesForKeys: [.fileSizeKey]
-            ) {
-                for file in files {
-                    if let attrs = try? file.resourceValues(forKeys: [.fileSizeKey]),
-                       let size = attrs.fileSize { totalSize += Int64(size) }
-                }
-            }
+            let cloud    = directorySize(at: cloudDir)
+            let workshop = directorySize(at: workshopDir)
+            let localImport = directorySize(at: localImportsDir)
+            let total    = cloud + workshop + localImport
+
+            func fmt(_ b: Int64) -> String { String(format: "%.1f MB", Double(b) / (1024 * 1024)) }
             await MainActor.run {
-                self?.cacheSizeString = String(format: "%.1f MB", Double(totalSize) / (1024 * 1024))
+                self?.cloudCacheSizeString  = fmt(cloud)
+                self?.workshopCacheSizeString = fmt(workshop)
+                self?.localImportSizeString = fmt(localImport)
+                self?.cacheSizeString       = fmt(total)
             }
         }
-        // 下载/删除后刷新已缓存 ID 集合，保持 displayWallpapers 准确
         refreshDownloadedIds()
     }
 
@@ -1504,8 +1624,16 @@ class WallpaperViewModel: ObservableObject {
     @Published var workshopSelectedType: String = "全部" {
         didSet {
             workshopCurrentPage = 0
-            workshopSteamCursor = 0
-            workshopDisplayPageSteamStart = [:]
+            workshopTotalResults = 0
+            fetchWorkshopItems()
+        }
+    }
+
+    /// 排序方式："1"=最新发布  "3"=热门趋势
+    @Published var workshopSortType: String = "3" {
+        didSet {
+            workshopCurrentPage = 0
+            workshopTotalResults = 0
             fetchWorkshopItems()
         }
     }
@@ -1515,6 +1643,7 @@ class WallpaperViewModel: ObservableObject {
     @Published var workshopSearchText: String = ""
     @Published var workshopCurrentPage: Int = 0
     @Published var workshopHasNextPage: Bool = false
+    @Published var workshopTotalResults: Int = 0
     @Published var workshopDownloadStates: [String: WorkshopDownloadState] = [:]
     @Published var workshopPreviewItem: SteamWorkshopItem? = nil
     @Published var workshopDownloadStartTime: [String: Date] = [:]
@@ -1523,11 +1652,6 @@ class WallpaperViewModel: ObservableObject {
     /// Total file size (bytes) reported by SteamCMD for each item.
     @Published var workshopTotalBytes: [String: Int64] = [:]
     let workshopItemsPerPage: Int = 12
-
-    /// 游标：下一个要拉取的 Steam 原始页码（供 type 筛选多页合并使用）
-    var workshopSteamCursor: Int = 0
-    /// 缓存每个展示页对应的 Steam 起始页码，支持前后翻页时不重复/不跳过内容
-    var workshopDisplayPageSteamStart: [Int: Int] = [:]
 
     /// Tracks the active fetch so stale in-flight requests can be cancelled on page change.
     private var workshopFetchTask: Task<Void, Never>?
@@ -1539,10 +1663,11 @@ class WallpaperViewModel: ObservableObject {
     func fetchWorkshopItems() {
         workshopFetchTask?.cancel()
         workshopFetchGeneration += 1
-        let gen        = workshopFetchGeneration
+        let gen         = workshopFetchGeneration
         let displayPage = workshopCurrentPage
         let query       = workshopSearchText
         let filterType  = workshopSelectedType  // "全部" | "Video" | "Scene" | "Web" | "Image"
+        let sortType    = workshopSortType       // "0"=投票 | "1"=最新 | "3"=热门趋势
 
         workshopFetchTask = Task { @MainActor in
             isLoadingWorkshop = true
@@ -1550,66 +1675,39 @@ class WallpaperViewModel: ObservableObject {
                 if gen == workshopFetchGeneration { isLoadingWorkshop = false }
             }
             do {
-                // ── Steam 页码起点 ──────────────────────────────────────────────────
-                // displayPage == 0：总是从 Steam 第 0 页开始，同时清除旧游标缓存（新搜索/新筛选）
-                // displayPage  > 0：从上一页留下的游标续读，避免内容重复或跳过
-                let steamStart: Int
-                if displayPage == 0 {
-                    steamStart = 0
-                    workshopDisplayPageSteamStart = [:]
-                    workshopSteamCursor = 0
+                // All types use page-based + server-side tag filtering (requiredtags via Worker).
+                // This gives accurate results and total counts for all filter types.
+                let tag: String? = filterType == "全部" ? nil : filterType
+                let (items, more, _, pageTotal) = try await SteamWorkshopService.shared.fetchViaWorker(
+                    query: query, page: displayPage + 1, filterTag: tag,
+                    sortType: sortType, perPage: workshopItemsPerPage
+                )
+                guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
+                if pageTotal > 0 { workshopTotalResults = pageTotal }
+                let enriched: [SteamWorkshopItem]
+                if items.contains(where: { $0.fileSize == 0 }) {
+                    enriched = await SteamWorkshopService.shared.fetchItemDetails(for: items)
                 } else {
-                    steamStart = workshopDisplayPageSteamStart[displayPage] ?? workshopSteamCursor
+                    enriched = items
                 }
-                workshopDisplayPageSteamStart[displayPage] = steamStart
-
-                // ── 循环拉取 Steam 页直到凑满 workshopItemsPerPage 张同类型壁纸 ──
-                // "全部"：直接取第一批，不需要跨页合并；其它类型最多尝试 8 个 Steam 页
-                let maxSteamPages = filterType == "全部" ? 1 : 8
-                var cursor       = steamStart
-                var collected: [SteamWorkshopItem] = []
-                var lastHasMore  = false
-
-                for _ in 0..<maxSteamPages {
-                    guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
-
-                    let (items, more) = try await SteamWorkshopService.shared.fetchViaRSS(
-                        query: query, page: cursor, perPage: workshopItemsPerPage
-                    )
-                    let enriched = await SteamWorkshopService.shared.fetchItemDetails(for: items)
-                    guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
-
-                    if filterType == "全部" {
-                        collected = enriched
-                    } else {
-                        let low = filterType.lowercased()
-                        collected.append(contentsOf: enriched.filter {
-                            $0.tags.contains(where: { $0.lowercased() == low })
-                        })
-                    }
-
-                    cursor += 1
-                    lastHasMore = more
-
-                    // 凑满或 Steam 无更多数据时提前退出
-                    if collected.count >= workshopItemsPerPage || !more { break }
-
-                    // 中间更新：让用户看到已找到的内容，不必等全部加载完
-                    workshopItems = Array(collected.prefix(workshopItemsPerPage))
+                guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
+                // Client-side type filter: remove items whose tags don't match the selected type.
+                // The server-side requiredtags filter is approximate; enriched tags are authoritative.
+                let filtered: [SteamWorkshopItem]
+                if filterType == "全部" {
+                    filtered = enriched
+                } else {
+                    let ft = filterType.lowercased()
+                    filtered = enriched.filter { $0.tags.map({ $0.lowercased() }).contains(ft) }
                 }
-
-                // ── 保存游标供下一展示页使用 ──────────────────────────────────────
-                workshopDisplayPageSteamStart[displayPage + 1] = cursor
-                workshopSteamCursor = cursor
-
-                workshopItems = Array(collected.prefix(workshopItemsPerPage))
-                // 只要还有超出 12 张的缓冲，或 Steam 还有更多页，就允许翻页
-                workshopHasNextPage = collected.count > workshopItemsPerPage || lastHasMore
+                workshopItems = filtered
+                workshopHasNextPage = more
             } catch {
                 guard gen == workshopFetchGeneration, !Task.isCancelled else { return }
                 statusMessage = "❌ Workshop 加载失败：\(error.localizedDescription)"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                    if self.statusMessage.hasPrefix("❌") { self.statusMessage = "" }
+                let msgSnap = statusMessage
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                    if self?.statusMessage == msgSnap { self?.statusMessage = "" }
                 }
             }
         }
@@ -1624,8 +1722,9 @@ class WallpaperViewModel: ObservableObject {
     private func resolveWorkshopDownloadResult(itemId: String) {
         let dir = SteamWorkshopService.workshopItemDirectory(itemId: itemId)
         if let file = SteamWorkshopService.findWallpaperFile(in: dir) {
-            workshopDownloadStates[itemId] = .done(file)
-            addWorkshopImport(itemId: itemId, fileURL: file)
+            // addWorkshopImport may move the entire directory; use the returned path
+            let storedURL = addWorkshopImport(itemId: itemId, fileURL: file)
+            workshopDownloadStates[itemId] = .done(storedURL)
             statusMessage = "✅ 下载完成，已自动加入本地壁纸"
         } else {
             let weType = SteamWorkshopService.detectWallpaperType(in: dir)
@@ -1637,6 +1736,29 @@ class WallpaperViewModel: ObservableObject {
                 workshopDownloadStates[itemId] = .failed("下载完成但找不到可用的壁纸文件")
                 statusMessage = "⚠️ 下载完成但找不到壁纸文件"
             }
+        }
+    }
+
+    /// Restores workshopDownloadStates for a card/overlay onAppear — checks localImports first
+    /// (survives across sessions), then the app-managed workshop directory, then SteamCMD.
+    func restoreWorkshopDownloadState(for item: SteamWorkshopItem) {
+        guard workshopDownloadStates[item.id] == nil else { return }
+        // 1. Already tracked in localImports (persisted to UserDefaults)
+        if let existing = localImports.first(where: { $0.id == item.id }),
+           FileManager.default.fileExists(atPath: existing.fullURL.path) {
+            workshopDownloadStates[item.id] = .done(existing.fullURL)
+            return
+        }
+        // 2. App-managed workshop directory (entire item dir moved here after download)
+        let appDir = WallpaperCacheManager.shared.workshopDirectory.appendingPathComponent(item.id)
+        if let file = SteamWorkshopService.findWallpaperFile(in: appDir) {
+            workshopDownloadStates[item.id] = .done(file)
+            return
+        }
+        // 3. SteamCMD directory (freshly downloaded, not yet imported)
+        let steamDir = SteamWorkshopService.workshopItemDirectory(itemId: item.id)
+        if let file = SteamWorkshopService.findWallpaperFile(in: steamDir) {
+            workshopDownloadStates[item.id] = .done(file)
         }
     }
 
@@ -1707,10 +1829,9 @@ class WallpaperViewModel: ObservableObject {
                 workshopDownloadStates[item.id] = .failed("下载失败，请尝试在 Steam 中订阅")
                 statusMessage = "❌ 下载失败，匿名下载仅支持免费订阅的壁纸"
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                if self.statusMessage.contains("下载") || self.statusMessage.contains("SteamCMD") {
-                    self.statusMessage = ""
-                }
+            let msgSnapshot = self.statusMessage
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                if self?.statusMessage == msgSnapshot { self?.statusMessage = "" }
             }
         }
         workshopActiveTasks[item.id] = task
@@ -1783,6 +1904,13 @@ class WallpaperViewModel: ObservableObject {
                 },
                 totalBytesHandler: { [weak self] total in
                     self?.workshopTotalBytes[itemId] = total
+                },
+                mobileConfirmHandler: { [weak self] in
+                    self?.statusMessage = "📱 请打开手机 Steam App，点击确认登录请求…"
+                    let snap = "📱 请打开手机 Steam App，点击确认登录请求…"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                        if self?.statusMessage == snap { self?.statusMessage = "" }
+                    }
                 }
             )
 
@@ -1801,12 +1929,21 @@ class WallpaperViewModel: ObservableObject {
                 workshopDownloadStates[item.id] = nil
                 workshopLoginNeedsGuard = true
                 workshopLoginItem = item
-                statusMessage = ""   // 弹出验证码界面，状态栏不再重复提示
+                // 如果 guardCode 非空说明是验证码填错了，给用户提示
+                if let code = guardCode, !code.isEmpty {
+                    statusMessage = "❌ Steam Guard 验证码错误，请重新输入"
+                } else {
+                    statusMessage = "📧 Steam 已向邮箱发送验证码，请查收后输入"
+                }
             case .needsTwoFactor:
                 workshopDownloadStates[item.id] = nil
                 workshopLoginNeedsTwoFactor = true
                 workshopLoginItem = item
-                statusMessage = ""   // 弹出验证码界面，状态栏不再重复提示
+                if let code = guardCode, !code.isEmpty {
+                    statusMessage = "❌ 令牌验证码错误，请重新输入"
+                } else {
+                    statusMessage = "📱 请打开 Steam 手机令牌，查看验证码后输入"
+                }
             case .invalidCredentials:
                 workshopLoginSavedPassword = ""
                 workshopDownloadStates[item.id] = .failed("账号或密码错误")
@@ -1820,10 +1957,9 @@ class WallpaperViewModel: ObservableObject {
                 print("[SteamCMD output] \(brief)")
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                if self.statusMessage.hasPrefix("✅") || self.statusMessage.hasPrefix("⚠️") {
-                    self.statusMessage = ""
-                }
+            let credMsgSnapshot = self.statusMessage
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                if self?.statusMessage == credMsgSnapshot { self?.statusMessage = "" }
             }
         }
         workshopActiveTasks[item.id] = task
@@ -1898,7 +2034,7 @@ class WallpaperViewModel: ObservableObject {
         guard let cgImage else { return }
 
         guard let jpegData = NSBitmapImageRep(cgImage: cgImage).representation(using: .jpeg, properties: [:]) else { return }
-        let lockScreenURL = WallpaperCacheManager.shared.cacheDirectory
+        let lockScreenURL = WallpaperCacheManager.shared.cloudDirectory
             .appendingPathComponent("lockscreen_sync.jpg")
         guard (try? jpegData.write(to: lockScreenURL)) != nil else { return }
 
