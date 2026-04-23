@@ -402,7 +402,7 @@ struct WorkshopItemCard: View {
         )
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .shadow(color: Color.primary.opacity(isHovered ? 0.15 : 0.1), radius: isHovered ? 24 : 12, y: isHovered ? 12 : 6)
+                .shadow(color: .black.opacity(0.18), radius: 3, y: 2)
         )
         .scaleEffect(isHovered ? 1.02 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isHovered)

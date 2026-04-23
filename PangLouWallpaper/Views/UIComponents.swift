@@ -9,62 +9,6 @@ import AVKit
 
 let capsuleBgColor = Color.primary.opacity(0.05)
 
-// MARK: - 精准 Hover 检测（绕过 SwiftUI onHover 相邻卡片冲突问题）
-
-/// 用原生 NSTrackingArea 实现卡片 hover，inset 2px 彻底消除相邻卡片追踪区重叠。
-private struct CardHoverTracker: NSViewRepresentable {
-    let onHover: (Bool) -> Void
-
-    func makeNSView(context: Context) -> CardHoverNSView {
-        let v = CardHoverNSView()
-        v.onHover = onHover
-        return v
-    }
-
-    func updateNSView(_ nsView: CardHoverNSView, context: Context) {
-        nsView.onHover = onHover
-    }
-}
-
-class CardHoverNSView: NSView {
-    var onHover: ((Bool) -> Void)?
-    // mouseExited 时延迟 100ms 再通知，防止点击时鼠标轻微抖动触发 hover=false
-    // 导致按钮在 mouseDown→mouseUp 之间被移出视图树、点击失效
-    private var exitWorkItem: DispatchWorkItem?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(
-            rect: bounds.insetBy(dx: 2, dy: 2),
-            options: [.mouseEnteredAndExited, .activeInActiveApp],
-            owner: self,
-            userInfo: nil
-        ))
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        exitWorkItem?.cancel()
-        exitWorkItem = nil
-        onHover?(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        exitWorkItem?.cancel()
-        // 鼠标按下时（click 进行中）延迟 400ms，防止 mouseDown→mouseUp 期间
-        // 按钮被移出视图树导致点击失效；正常离开仍用 100ms 保护
-        let delay: Double = NSEvent.pressedMouseButtons != 0 ? 0.4 : 0.1
-        let work = DispatchWorkItem { [weak self] in
-            self?.exitWorkItem = nil
-            self?.onHover?(false)
-        }
-        exitWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-    }
-
-    // 不拦截鼠标点击事件，让下层视图正常响应
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
 
 /// 卡片动态预览
 /// - 卡片出现：优先读本地缓存，命中立刻播
@@ -532,10 +476,12 @@ struct WallpaperCardView: View {
         .animation(.easeInOut(duration: 0.15), value: isHovered)
         .animation(.easeInOut(duration: 0.1), value: isBatchSelected)
         .background(
+            // SwiftUI 对 Shape.shadow() 会显式设置 CALayer.shadowPath = 圆角路径，
+            // 避免 CA 用矩形 bounds 计算阴影导致浅色背景下出现"幽灵直角"。
             RoundedRectangle(cornerRadius: 16)
-                .shadow(color: Color.primary.opacity(isHovered ? 0.15 : 0.1), radius: isHovered ? 24 : 12, y: isHovered ? 12 : 6)
+                .shadow(color: .black.opacity(0.18), radius: 3, y: 2)
         )
-        .background(CardHoverTracker { isHovered = $0 })
+        .onHover { isHovered = $0 }
         .task(id: "\(item.id)_\(viewModel.cacheVersion)") { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); isDownloaded = FileManager.default.fileExists(atPath: localURL.path) }
     }
 }
