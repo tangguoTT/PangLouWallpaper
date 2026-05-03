@@ -246,3 +246,5 @@ struct PendingUploadItem: Identifiable {
     var resolution: String = ""
     var color: String = ""
 }
+
+

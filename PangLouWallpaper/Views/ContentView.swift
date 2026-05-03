@@ -10,6 +10,7 @@ struct ContentView: View {
     @AppStorage("isDarkMode") private var isDarkMode: Bool = true
     @AppStorage("isSidebarVisible") private var isSidebarVisible: Bool = true
     @State private var showSettings = false
+    @State private var hasLoaded = false
 
     private var sidebarToggleButton: some View {
         Button(action: {
@@ -33,8 +34,8 @@ struct ContentView: View {
         ZStack {
             // Background
             (isDarkMode
-                ? Color(red: 0.07, green: 0.08, blue: 0.10)
-                : Color(red: 0.94, green: 0.94, blue: 0.97)
+                ? Color.bgDark
+                : Color.bgLight
             ).ignoresSafeArea()
 
             GeometryReader { geo in
@@ -64,6 +65,7 @@ struct ContentView: View {
                             || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
                             || viewModel.currentTab == .steamWorkshop
                             || (viewModel.currentTab == .downloaded && viewModel.downloadedSubTab != .local)
+                            || viewModel.currentTab == .slideshow
                         let hideBottomBar = (viewModel.currentTab == .upload && viewModel.uploadMode == .pending)
                             || (viewModel.currentTab == .collection && viewModel.selectedCollectionId == nil)
                             || viewModel.currentTab == .steamWorkshop
@@ -85,9 +87,12 @@ struct ContentView: View {
                                             .padding(.top, 18)
                                             .padding(.bottom, 12)
                                     }
-                                    Divider().opacity(0.5)
                                 }
-                                .background(.bar)
+                                .background(
+                                    isDarkMode
+                                        ? Color.bgDark
+                                        : Color.bgLight
+                                )
                                 .zIndex(10)
                             } else {
                                 // No search bar: show just the toggle button row when sidebar hidden
@@ -107,6 +112,18 @@ struct ContentView: View {
                             WallpaperGridView(viewModel: viewModel)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .zIndex(1)
+                                .overlay {
+                                    if viewModel.anyFilterMenuOpen {
+                                        Color.clear
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                withAnimation(.easeInOut(duration: 0.1)) {
+                                                    viewModel.closeAllFilterMenus()
+                                                }
+                                            }
+                                            .zIndex(5)
+                                    }
+                                }
 
                             if viewModel.currentTab == .downloaded
                                 && viewModel.downloadedSubTab == .local
@@ -279,6 +296,8 @@ struct ContentView: View {
         .frame(minWidth: 1100, minHeight: 750)
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear {
+            guard !hasLoaded else { return }
+            hasLoaded = true
             viewModel.fetchCloudData()
             viewModel.restoreLastWallpaper()
         }

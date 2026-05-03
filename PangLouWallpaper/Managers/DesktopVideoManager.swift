@@ -63,6 +63,7 @@ class DesktopVideoManager: NSObject {
 
     private var isSleeping = false
     private var isPausedByEnergySaving = false
+    private var pendingStallCheck = false   // 防止多个唤醒通知重复触发重建
 
     var videoVolume: Float = UserDefaults.standard.float(forKey: "videoVolume") {
         didSet {
@@ -116,22 +117,25 @@ class DesktopVideoManager: NSObject {
     @objc private func handleScreenWake() {
         isSleeping = false
         isPausedByEnergySaving = false
-        if isEnergySavingEnabled {
-            scheduleEnergySavingCheck(after: 1.0)
-        } else {
-            resumeAll()
-            // 系统深度休眠（关盖子）后 AVQueuePlayer 可能实际未恢复，延迟检测并重建
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                self?.rebuildIfStalled()
-            }
-        }
+        scheduleRebuildOnWake()
     }
 
-    private func rebuildIfStalled() {
-        guard !isSleeping, !screenPlayers.isEmpty, let url = currentVideoURL else { return }
-        let stalled = screenPlayers.contains { $0.player.timeControlStatus != .playing }
-        if stalled {
-            playVideoOnDesktop(url: url, screenName: currentScreenName)
+    // 三个唤醒通知会同时触发，用 pendingStallCheck 确保只重建一次
+    private func scheduleRebuildOnWake() {
+        guard !pendingStallCheck else { return }
+        pendingStallCheck = true
+        // 等系统完全稳定后再重建（GPU 渲染管线在深度休眠后必须整体重建，
+        // 仅调 player.play() 无法恢复 AVPlayerLayer 渲染）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self else { return }
+            self.pendingStallCheck = false
+            guard !self.isSleeping, let url = self.currentVideoURL else { return }
+            if self.isEnergySavingEnabled && self.isDesktopCovered() {
+                self.isPausedByEnergySaving = true
+                self.pauseAll()
+            } else {
+                self.playVideoOnDesktop(url: url, screenName: self.currentScreenName)
+            }
         }
     }
 

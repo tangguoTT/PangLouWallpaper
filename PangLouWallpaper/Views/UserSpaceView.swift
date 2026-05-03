@@ -57,34 +57,66 @@ struct UserSpaceView: View {
     // MARK: - Profile section
 
     private var profileSection: some View {
-        VStack(spacing: 12) {
-            // 头像
+        VStack(spacing: 14) {
+            // 头像 + 渐变圆环
             avatarView
-                .frame(width: 80, height: 80)
+                .frame(width: 76, height: 76)
                 .clipShape(Circle())
-                .overlay(Circle().stroke(Color.primary.opacity(0.1), lineWidth: 1))
+                .overlay(
+                    Circle()
+                        .stroke(LinearGradient.brand, lineWidth: 2.5)
+                        .padding(-1)
+                )
+                .shadow(color: Color.brandPurple.opacity(0.22), radius: 8, y: 3)
 
             // 用户名 + 邮箱
-            VStack(spacing: 4) {
+            VStack(spacing: 3) {
                 let name = viewModel.currentProfile?.username ?? ""
                 Text(name.isEmpty ? "未设置用户名" : name)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(name.isEmpty ? .secondary : .primary)
                 Text(viewModel.currentUser?.email ?? "")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary.opacity(0.7))
             }
+
+            // 统计数字
+            HStack(spacing: 0) {
+                profileStatCell(value: "\(viewModel.userUploads.count)", label: "上传")
+                Rectangle()
+                    .fill(Color.primary.opacity(0.1))
+                    .frame(width: 1, height: 30)
+                profileStatCell(value: "\(viewModel.collections.count)", label: "合集")
+            }
+            .padding(.vertical, 10)
+            .background(Color.primary.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
 
             Button(action: { viewModel.showEditProfile = true }) {
                 Text("编辑资料")
                     .font(.system(size: 13, weight: .semibold))
                     .padding(.horizontal, 20).padding(.vertical, 7)
-                    .background(Color.accentColor.opacity(0.12))
-                    .foregroundColor(.accentColor)
+                    .background(Color.brandPurple.opacity(0.1))
+                    .foregroundColor(.brandPurple)
                     .clipShape(Capsule())
             }.buttonStyle(.plain)
         }
         .padding(.top, 8)
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func profileStatCell(value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 20, weight: .bold).monospacedDigit())
+                .foregroundStyle(LinearGradient.brand)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary.opacity(0.65))
+        }
         .frame(maxWidth: .infinity)
     }
 
@@ -149,7 +181,7 @@ struct UserSpaceView: View {
                     }) {
                         Text("查看全部 \(viewModel.userUploads.count) 张")
                             .font(.system(size: 13))
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(.brandPurple)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }.buttonStyle(.plain)
                 }
@@ -178,7 +210,7 @@ struct UserSpaceView: View {
                     Image(systemName: "chevron.right")
                 }
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.accentColor)
+                .foregroundColor(.brandPurple)
             }.buttonStyle(.plain)
         }
     }
@@ -230,7 +262,7 @@ struct EditProfileView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Text("编辑资料").font(.system(size: 18, weight: .bold))
+            Text("编辑资料").font(.system(size: 17, weight: .semibold))
 
             // 头像选择
             Button(action: pickAvatar) {
@@ -252,7 +284,7 @@ struct EditProfileView: View {
                     .clipShape(Circle())
 
                     Circle()
-                        .fill(Color.accentColor)
+                        .fill(Color.brandPurple)
                         .frame(width: 24, height: 24)
                         .overlay(Image(systemName: "camera.fill").font(.system(size: 11)).foregroundColor(.white))
                 }
@@ -285,7 +317,7 @@ struct EditProfileView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(Color.accentColor)
+                    .background(Color.brandPurple)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 }.buttonStyle(.plain).disabled(isSaving)
             }
@@ -340,7 +372,7 @@ struct ChangePasswordView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("修改密码").font(.system(size: 18, weight: .bold))
+            Text("修改密码").font(.system(size: 17, weight: .semibold))
 
             if didSucceed {
                 VStack(spacing: 12) {
@@ -350,7 +382,7 @@ struct ChangePasswordView: View {
                         .font(.system(size: 15, weight: .medium))
                     Button("关闭") { viewModel.showChangePassword = false }
                         .buttonStyle(.plain)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(.brandPurple)
                 }
             } else {
                 VStack(spacing: 12) {
@@ -367,9 +399,11 @@ struct ChangePasswordView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     if !errorMessage.isEmpty {
-                        Text(errorMessage)
-                            .font(.system(size: 13)).foregroundColor(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.circle.fill").foregroundColor(.red)
+                            Text(errorMessage).font(.system(size: 14)).foregroundColor(.red)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
 
@@ -389,7 +423,7 @@ struct ChangePasswordView: View {
                             Text("确认修改").fontWeight(.bold).foregroundColor(.white)
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 10)
-                        .background(Color.accentColor)
+                        .background(Color.brandPurple)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                     }.buttonStyle(.plain).disabled(isSaving || newPassword.isEmpty)
                 }
@@ -400,6 +434,7 @@ struct ChangePasswordView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 24, y: 12)
+        .onAppear { newPassword = ""; confirmPassword = ""; errorMessage = ""; didSucceed = false }
     }
 
     private func save() {

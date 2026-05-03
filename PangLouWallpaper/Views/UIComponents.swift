@@ -9,6 +9,60 @@ import AVKit
 
 let capsuleBgColor = Color.primary.opacity(0.05)
 
+// MARK: - Brand Colors
+extension Color {
+    // 品牌主色
+    static let brandPurple  = Color(hex: "#7C6BF5")
+    static let brandPink    = Color(hex: "#A855F7")
+
+    // 深色模式层级（由深到浅）
+    static let bgDark       = Color(hex: "#0D0E12")   // 主背景（最深）
+    static let sidebarDark  = Color(hex: "#0A0B0F")   // 侧边栏（比主背景略深）
+    static let cardDark     = Color(hex: "#161820")   // 卡片/面板（第二层）
+    static let surfaceDark  = Color(hex: "#1E2028")   // 弹窗/浮层（第三层）
+
+    // 浅色模式层级
+    static let bgLight      = Color(hex: "#F5F5F7")   // 主背景
+    static let sidebarLight = Color(hex: "#EDEDF0")   // 侧边栏
+    static let cardLight    = Color.white              // 卡片/面板
+
+    // Steam 品牌蓝
+    static let steamBlue    = Color(red: 0.10, green: 0.48, blue: 0.90)
+}
+
+// MARK: - Typography Scale
+extension Font {
+    /// 页面大标题：22pt Black
+    static let displayTitle  = Font.system(size: 22, weight: .black)
+    /// 模块/区段标题：15pt Semibold
+    static let sectionTitle  = Font.system(size: 15, weight: .semibold)
+    /// 正文 / 卡片标题：13pt Medium
+    static let bodyMedium    = Font.system(size: 13, weight: .medium)
+    /// 辅助信息 / 数字徽章：11pt Mono
+    static let labelMono     = Font.system(size: 11, weight: .regular).monospacedDigit()
+    /// 按钮文字：13pt Semibold
+    static let buttonLabel   = Font.system(size: 13, weight: .semibold)
+}
+
+// MARK: - Shared Utilities
+
+/// 字节数格式化，统一全局使用，避免重复实现
+func formatBytes(_ bytes: Int64) -> String {
+    if bytes < 1024 { return "\(bytes) B" }
+    if bytes < 1024 * 1024 { return String(format: "%.1f KB", Double(bytes) / 1024) }
+    if bytes < 1024 * 1024 * 1024 { return String(format: "%.1f MB", Double(bytes) / (1024 * 1024)) }
+    return String(format: "%.2f GB", Double(bytes) / (1024 * 1024 * 1024))
+}
+
+// MARK: - Brand Gradient
+extension LinearGradient {
+    static let brand = LinearGradient(
+        colors: [Color.brandPurple, Color.brandPink],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
 
 /// 卡片动态预览
 /// - 卡片出现：优先读本地缓存，命中立刻播
@@ -142,49 +196,70 @@ struct AsyncThumbnailView: View {
             .contentShape(Rectangle())
             .task(id: item.fullURL) {
                 isWebWallpaper = false
-                // 本地 HTML 壁纸：先找同目录 preview 图，否则显示占位图标
                 let ext = item.fullURL.pathExtension.lowercased()
-                if item.fullURL.isFileURL && (ext == "html" || ext == "htm") {
+
+                // 本地文件（HTML、视频、图片）：优先用同目录的预览图
+                if item.fullURL.isFileURL {
                     let dir = item.fullURL.deletingLastPathComponent()
-                    let candidates = ["preview.jpg", "preview.jpeg", "preview.png",
-                                      "thumbnail.jpg", "thumbnail.png"]
-                    for name in candidates {
-                        let previewURL = dir.appendingPathComponent(name)
+
+                    // 1. 读 project.json 的 "preview" 字段（Wallpaper Engine 壁纸约定）
+                    if let data = try? Data(contentsOf: dir.appendingPathComponent("project.json")),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let previewName = json["preview"] as? String, !previewName.isEmpty {
+                        let previewURL = dir.appendingPathComponent(previewName)
                         if FileManager.default.fileExists(atPath: previewURL.path),
-                           let img = NSImage(contentsOf: previewURL) {
+                           let img = WallpaperCacheManager.downsampledImage(at: previewURL, maxDimension: 400) {
                             thumbnail = img
                             return
                         }
                     }
-                    isWebWallpaper = true   // 无预览图可用
+
+                    // 2. 通用候选文件名（含 .gif）
+                    let candidates = ["preview.jpg", "preview.jpeg", "preview.png",
+                                      "preview.gif", "thumbnail.jpg", "thumbnail.png"]
+                    for name in candidates {
+                        let previewURL = dir.appendingPathComponent(name)
+                        if FileManager.default.fileExists(atPath: previewURL.path),
+                           let img = WallpaperCacheManager.downsampledImage(at: previewURL, maxDimension: 400) {
+                            thumbnail = img
+                            return
+                        }
+                    }
+
+                    // 3a. HTML 壁纸无预览图 → 占位图标
+                    if ext == "html" || ext == "htm" {
+                        isWebWallpaper = true
+                        return
+                    }
+
+                    // 3b. 本地视频 → 用 AVAssetImageGenerator 抓帧
+                    if item.isVideo {
+                        thumbnail = await Task.detached(priority: .utility) {
+                            let asset = AVAsset(url: item.fullURL)
+                            let gen = AVAssetImageGenerator(asset: asset)
+                            gen.appliesPreferredTrackTransform = true
+                            gen.maximumSize = CGSize(width: 800, height: 500)
+                            // 跳过第一秒，避免抓到视频开头的黑帧
+                            let t1 = CMTime(seconds: 1, preferredTimescale: 600)
+                            gen.requestedTimeToleranceBefore = CMTime(seconds: 2, preferredTimescale: 600)
+                            gen.requestedTimeToleranceAfter  = CMTime(seconds: 2, preferredTimescale: 600)
+                            if let cgImage = try? gen.copyCGImage(at: t1, actualTime: nil) {
+                                return NSImage(cgImage: cgImage, size: .zero)
+                            }
+                            guard let cgImage = try? gen.copyCGImage(at: .zero, actualTime: nil) else { return nil }
+                            return NSImage(cgImage: cgImage, size: .zero)
+                        }.value
+                        return
+                    }
+
+                    // 3c. 本地图片直接展示
+                    thumbnail = await WallpaperCacheManager.shared.fetchThumbnail(for: item.fullURL)
                     return
                 }
 
-                if item.fullURL.isFileURL && item.isVideo {
-                    thumbnail = await Task.detached(priority: .utility) {
-                        let asset = AVAsset(url: item.fullURL)
-                        let gen = AVAssetImageGenerator(asset: asset)
-                        gen.appliesPreferredTrackTransform = true
-                        gen.maximumSize = CGSize(width: 800, height: 500)
-                        // 跳过第一秒，避免抓到视频开头的黑帧
-                        let t1 = CMTime(seconds: 1, preferredTimescale: 600)
-                        gen.requestedTimeToleranceBefore = CMTime(seconds: 2, preferredTimescale: 600)
-                        gen.requestedTimeToleranceAfter  = CMTime(seconds: 2, preferredTimescale: 600)
-                        if let cgImage = try? gen.copyCGImage(at: t1, actualTime: nil) {
-                            return NSImage(cgImage: cgImage, size: .zero)
-                        }
-                        // 回退到第 0 帧
-                        guard let cgImage = try? gen.copyCGImage(at: .zero, actualTime: nil) else { return nil }
-                        return NSImage(cgImage: cgImage, size: .zero)
-                    }.value
-                } else {
-                    // 本地图片直接读取；远端图片走 Cloudflare，视频走 thumbnails/{id}.jpg
-                    // 使用 fetchThumbnail（写入 thumb_ 前缀路径），避免污染 isDownloaded 判断
-                    let thumbURL = item.fullURL.isFileURL
-                        ? item.fullURL
-                        : item.fullURL.ossThumb(isVideo: item.isVideo)
-                    thumbnail = await WallpaperCacheManager.shared.fetchThumbnail(for: thumbURL)
-                }
+                // 远端文件：走 Cloudflare/OSS 缩略图路径
+                let thumbURL = item.fullURL.ossThumb(isVideo: item.isVideo)
+                thumbnail = await WallpaperCacheManager.shared.fetchThumbnail(for: thumbURL)
             }
             .onDisappear { thumbnail = nil; isWebWallpaper = false }
     }
@@ -206,22 +281,33 @@ private struct CardHoverOverlay: View {
     private var isNormalMode: Bool { viewModel.currentTab != .slideshow && !isUploadManage }
 
     var body: some View {
-        Color.black.opacity(0.28)
+        Color.black.opacity(0.32)
             .overlay(alignment: .center) { centerButtons }
             .overlay(alignment: .topLeading) { topLeadingButton }
             .overlay(alignment: .bottomLeading) { bottomLeadingButton }
             .overlay(alignment: .bottomTrailing) { bottomTrailingButton }
+            .onTapGesture {
+                if viewModel.currentTab == .downloaded {
+                    viewModel.openDetail(item)
+                }
+            }
     }
 
     @ViewBuilder private var centerButtons: some View {
         if isUploadManage {
             Button(action: { withAnimation { viewModel.beginEdit(item: item) } }) {
-                HStack { Image(systemName: "pencil"); Text("修改属性") }
-                    .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                    .padding(.vertical, 8).padding(.horizontal, 20)
-                    .background(Color.blue.opacity(0.8)).clipShape(Capsule()).shadow(radius: 3)
+                HStack(spacing: 6) {
+                    Image(systemName: "pencil")
+                    Text("修改属性")
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.vertical, 9).padding(.horizontal, 20)
+                .background(LinearGradient.brand)
+                .clipShape(Capsule())
+                .shadow(color: Color.brandPurple.opacity(0.5), radius: 8, y: 3)
             }.buttonStyle(.plain)
-        } else if isNormalMode {
+        } else if isNormalMode && viewModel.currentTab != .downloaded {
             Button(action: {
                 if viewModel.currentTab == .pc {
                     guard viewModel.isLoggedIn else { viewModel.showLoginSheet = true; return }
@@ -229,28 +315,32 @@ private struct CardHoverOverlay: View {
                 } else { viewModel.setWallpaper(item: item) }
             }) {
                 Text(centerButtonText)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(colorScheme == .dark ? .white : .black)
-                    .padding(.vertical, 8).padding(.horizontal, 20)
-                    .background(.ultraThinMaterial).clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.primary.opacity(0.2), lineWidth: 1))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.vertical, 9).padding(.horizontal, 20)
+                    .background(LinearGradient.brand)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.brandPurple.opacity(0.5), radius: 8, y: 3)
             }.buttonStyle(.plain)
         }
     }
 
     @ViewBuilder private var topLeadingButton: some View {
-        if isNormalMode && !isLocalImport && viewModel.currentTab != .pc && viewModel.currentTab != .collection {
+        if !isLocalImport && !isUploadManage && viewModel.currentTab != .pc && viewModel.currentTab != .collection && viewModel.currentTab != .downloaded {
             Button(action: { viewModel.toggleInPlaylist(item: item) }) {
                 Image(systemName: viewModel.playlistIds.contains(item.id) ? "star.fill" : "star")
                     .font(.system(size: 13))
                     .foregroundColor(viewModel.playlistIds.contains(item.id) ? .yellow : .white)
-                    .padding(8).background(Color.primary.opacity(0.08)).clipShape(Circle())
+                    .padding(7)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
             }.buttonStyle(.plain).padding(8)
         }
     }
 
     @ViewBuilder private var bottomLeadingButton: some View {
-        if isNormalMode && !isLocalImport {
+        if isNormalMode && !isLocalImport && viewModel.currentTab != .downloaded {
             Button(action: {
                 if viewModel.isLoggedIn { viewModel.addToCollectionTargetItem = item }
                 else { viewModel.showLoginSheet = true }
@@ -258,7 +348,10 @@ private struct CardHoverOverlay: View {
                 Image(systemName: isInAnyCollection ? "bookmark.fill" : "bookmark")
                     .font(.system(size: 13))
                     .foregroundColor(isInAnyCollection ? Color(hex: "#C6AC2C") : .white)
-                    .padding(8).background(Color.primary.opacity(0.08)).clipShape(Circle())
+                    .padding(7)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
             }.buttonStyle(.plain).padding(8)
         }
     }
@@ -267,22 +360,36 @@ private struct CardHoverOverlay: View {
         if isUploadManage {
             Button(action: { viewModel.deleteFromCloud(item: item) }) {
                 Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white)
-                    .padding(8).background(Color.red.opacity(0.8)).clipShape(Circle())
-                    .shadow(color: .black.opacity(0.3), radius: 3, y: 2)
+                    .padding(7).background(Color.red.opacity(0.85)).clipShape(Circle())
+                    .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
             }.buttonStyle(.plain).padding(8)
         } else if viewModel.currentTab == .collection, let colId = viewModel.selectedCollectionId {
             Button(action: { viewModel.setCoverWallpaper(for: colId, wallpaperId: item.id) }) {
                 Image(systemName: "photo.badge.checkmark").font(.system(size: 12)).foregroundColor(.white)
-                    .padding(8).background(Color.accentColor.opacity(0.85)).clipShape(Circle())
-                    .shadow(color: .black.opacity(0.3), radius: 3, y: 2)
+                    .padding(7).background(LinearGradient.brand).clipShape(Circle())
+                    .shadow(color: Color.brandPurple.opacity(0.4), radius: 4, y: 2)
             }.buttonStyle(.plain).help("设为合集封面").padding(8)
         } else if viewModel.currentTab == .downloaded {
             Button(action: { viewModel.deleteConfirmItem = item }) {
                 Image(systemName: "trash.fill").font(.system(size: 12)).foregroundColor(.white)
-                    .padding(8).background(Color.red.opacity(0.8)).clipShape(Circle())
-                    .shadow(color: .black.opacity(0.3), radius: 3, y: 2)
+                    .padding(7).background(Color.red.opacity(0.85)).clipShape(Circle())
+                    .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
             }.buttonStyle(.plain).padding(8)
         }
+    }
+}
+
+private struct CardBadge: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(color)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
 
@@ -332,7 +439,13 @@ struct WallpaperCardView: View {
             // 预览点击区：悬停时从视图树彻底移除（不能只用 allowsHitTesting(false)，
             // 在 macOS 上含 contentShape(Rectangle()) 的 Button 即使禁用仍可能拦截点击）
             if !isHovered && !isBatchMode {
-                Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = item } }) {
+                Button(action: {
+                    if viewModel.currentTab == .downloaded {
+                        viewModel.openDetail(item)
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.previewItem = item }
+                    }
+                }) {
                     Color.clear.contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }
@@ -353,30 +466,59 @@ struct WallpaperCardView: View {
                     .allowsHitTesting(false)
             }
 
-            // 底部渐变信息栏（标题，置于视频层之上确保始终可见）
+            // 底部渐变信息栏
             VStack(spacing: 0) {
                 Spacer()
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0),
-                        .init(color: .black.opacity(0.65), location: 1)
+                        .init(color: .black.opacity(0.72), location: 1)
                     ],
                     startPoint: .top, endPoint: .bottom
                 )
-                .frame(height: 50)
+                .frame(height: 62)
                 .overlay(alignment: .bottomLeading) {
-                    Text(item.title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.92))
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 6)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if !item.title.isEmpty {
+                            Text(item.title)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.95))
+                                .lineLimit(1)
+                        }
+                        HStack(spacing: 4) {
+                            if item.isVideo {
+                                CardBadge(text: "动态", color: Color(hex: "#7C6BF5"))
+                            }
+                            if !item.resolution.isEmpty && item.resolution != "其他" {
+                                CardBadge(text: item.resolution, color: Color.white.opacity(0.18))
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 7)
                 }
             }
             .allowsHitTesting(false)
 
-            if isCurrentWallpaper && !isHovered { VStack { HStack { Text("使用中").font(.system(size: 10, weight: .bold)).foregroundColor(.white).padding(.horizontal, 8).padding(.vertical, 3).background(Color.accentColor).clipShape(Capsule()).padding(8); Spacer() }; Spacer() } }
-            
+            // 当前使用中 badge
+            if isCurrentWallpaper && !isHovered {
+                VStack {
+                    HStack {
+                        Text("使用中")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(LinearGradient.brand)
+                            .clipShape(Capsule())
+                            .shadow(color: Color.brandPurple.opacity(0.55), radius: 6, y: 2)
+                            .padding(8)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+            }
+
             let isDownloading = viewModel.downloadProgress[item.id] != nil
 
             // 批量选择模式下不渲染悬停操作层：
@@ -392,22 +534,35 @@ struct WallpaperCardView: View {
             
             if let progress = viewModel.downloadProgress[item.id] {
                 ZStack {
-                    Color.black.opacity(0.55)
-                    VStack(spacing: 6) {
+                    Color.black.opacity(0.5)
+                    VStack(spacing: 8) {
                         ZStack {
-                            Circle().stroke(Color.white.opacity(0.2), lineWidth: 4).frame(width: 44, height: 44)
-                            Circle().trim(from: 0, to: CGFloat(progress))
-                                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                                .frame(width: 44, height: 44).rotationEffect(.degrees(-90))
+                            Circle()
+                                .stroke(Color.white.opacity(0.15), lineWidth: 4)
+                                .frame(width: 46, height: 46)
+                            Circle()
+                                .trim(from: 0, to: CGFloat(progress))
+                                .stroke(
+                                    AngularGradient(
+                                        colors: [Color.brandPurple, Color.brandPink, Color.brandPurple],
+                                        center: .center
+                                    ),
+                                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                                )
+                                .frame(width: 46, height: 46)
+                                .rotationEffect(.degrees(-90))
                                 .animation(.linear(duration: 0.1), value: progress)
                             Text("\(Int(progress * 100))%")
-                                .font(.system(size: 10, weight: .bold).monospacedDigit()).foregroundColor(.white)
+                                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                                .foregroundColor(.white)
                         }
                         Button(action: { viewModel.cancelDownload(itemId: item.id) }) {
                             Text("取消")
-                                .font(.system(size: 10, weight: .medium)).foregroundColor(.white)
-                                .padding(.horizontal, 10).padding(.vertical, 3)
-                                .background(Color.white.opacity(0.2)).clipShape(Capsule())
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.white.opacity(0.85))
+                                .padding(.horizontal, 12).padding(.vertical, 4)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
                         }.buttonStyle(.plain)
                     }
                 }.transition(.opacity).zIndex(10)
@@ -415,30 +570,38 @@ struct WallpaperCardView: View {
 
             if viewModel.failedDownloadIds.contains(item.id) {
                 ZStack {
-                    Color.black.opacity(0.55)
-                    VStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.icloud.fill").font(.system(size: 22)).foregroundColor(.red)
-                        Text("下载失败").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                    Color.black.opacity(0.5)
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.icloud.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.red)
+                        Text("下载失败")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.white)
                         Button(action: { viewModel.retryDownload(item: item) }) {
-                            Text("重试").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
-                                .padding(.horizontal, 16).padding(.vertical, 5)
-                                .background(Color.accentColor).clipShape(Capsule())
+                            Text("重试")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 18).padding(.vertical, 6)
+                                .background(LinearGradient.brand)
+                                .clipShape(Capsule())
+                                .shadow(color: Color.brandPurple.opacity(0.4), radius: 6, y: 2)
                         }.buttonStyle(.plain)
                     }
                 }.transition(.opacity).zIndex(11)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(
                     isCurrentWallpaper
-                        ? AnyShapeStyle(Color.accentColor)
+                        ? AnyShapeStyle(LinearGradient.brand)
                         : AnyShapeStyle(LinearGradient(
-                            colors: [Color.white.opacity(0.3), Color.clear],
+                            colors: [Color.white.opacity(0.18), Color.clear],
                             startPoint: .topLeading, endPoint: .bottomTrailing
                           )),
-                    lineWidth: isCurrentWallpaper ? 2 : 0.5
+                    lineWidth: isCurrentWallpaper ? 2.5 : 0.5
                 )
         )
         // 批量选择覆盖层
@@ -446,18 +609,18 @@ struct WallpaperCardView: View {
             Group {
                 if isBatchMode {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(isBatchSelected ? Color.accentColor : Color.white.opacity(0.3), lineWidth: isBatchSelected ? 2.5 : 1)
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isBatchSelected ? Color.brandPurple : Color.white.opacity(0.3), lineWidth: isBatchSelected ? 2.5 : 1)
                         if isBatchSelected {
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.accentColor.opacity(0.18))
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.brandPurple.opacity(0.18))
                         }
                         VStack {
                             HStack {
                                 Spacer()
                                 Image(systemName: isBatchSelected ? "checkmark.circle.fill" : "circle")
                                     .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(isBatchSelected ? .accentColor : .white.opacity(0.7))
+                                    .foregroundColor(isBatchSelected ? .brandPurple : .white.opacity(0.7))
                                     .shadow(color: .black.opacity(0.3), radius: 3)
                                     .padding(8)
                             }
@@ -475,12 +638,6 @@ struct WallpaperCardView: View {
         )
         .animation(.easeInOut(duration: 0.15), value: isHovered)
         .animation(.easeInOut(duration: 0.1), value: isBatchSelected)
-        .background(
-            // SwiftUI 对 Shape.shadow() 会显式设置 CALayer.shadowPath = 圆角路径，
-            // 避免 CA 用矩形 bounds 计算阴影导致浅色背景下出现"幽灵直角"。
-            RoundedRectangle(cornerRadius: 16)
-                .shadow(color: .black.opacity(0.18), radius: 3, y: 2)
-        )
         .onHover { isHovered = $0 }
         .task(id: "\(item.id)_\(viewModel.cacheVersion)") { let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL); isDownloaded = FileManager.default.fileExists(atPath: localURL.path) }
     }
@@ -501,7 +658,7 @@ struct DeleteConfirmView: View {
                 .foregroundColor(.red)
 
             Text(isLocalImport ? "删除本地导入的壁纸" : "删除壁纸缓存")
-                .font(.system(size: 17, weight: .bold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.primary)
 
             Text(isLocalImport
@@ -553,74 +710,108 @@ struct EditWallpaperPopupView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("修改壁纸属性").font(.system(size: 18, weight: .bold)).foregroundColor(.primary)
-
-            VStack(spacing: 12) {
-                // 标题
-                HStack {
-                    Text("标题：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
-                    TextField("壁纸标题", text: $viewModel.editTitle)
-                        .textFieldStyle(.plain).font(.system(size: 13))
-                        .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.06)).cornerRadius(6)
-                        .frame(width: 280)
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("修改壁纸属性")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("修改后将同步到云端搜索索引")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.55))
                 }
-                // 描述
-                HStack {
-                    Text("描述：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
-                    TextField("一句话描述（用于全文搜索）", text: $viewModel.editDescription)
-                        .textFieldStyle(.plain).font(.system(size: 13))
-                        .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.06)).cornerRadius(6)
-                        .frame(width: 280)
-                }
-                // 标签
-                HStack {
-                    Text("标签：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
-                    TextField("逗号分隔，如：动漫, 夜晚, 城市", text: $viewModel.editTags)
-                        .textFieldStyle(.plain).font(.system(size: 13))
-                        .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.06)).cornerRadius(6)
-                        .frame(width: 280)
-                }
-                Divider().padding(.vertical, 2)
-                // 分类 / 分辨率 / 色系
-                HStack {
-                    Text("分类：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
-                    Picker("", selection: $viewModel.editCategory) {
-                        ForEach(categories, id: \.self) { Text($0).tag($0) }
-                    }.frame(width: 120).labelsHidden()
-                }
-                HStack {
-                    Text("分辨率：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
-                    Picker("", selection: $viewModel.editResolution) {
-                        ForEach(resolutions, id: \.self) { Text($0).tag($0) }
-                    }.frame(width: 120).labelsHidden()
-                }
-                HStack {
-                    Text("色系：").frame(width: 60, alignment: .trailing).font(.system(size: 14))
-                    Picker("", selection: $viewModel.editColor) {
-                        ForEach(colors, id: \.self) { Text($0).tag($0) }
-                    }.frame(width: 120).labelsHidden()
-                }
+                Spacer()
+                Button(action: { withAnimation { viewModel.cancelEdit() } }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 22, height: 22)
+                        .background(Color.primary.opacity(0.07))
+                        .clipShape(Circle())
+                }.buttonStyle(.plain)
             }
 
-            HStack(spacing: 20) {
+            // 文字字段区块
+            VStack(spacing: 0) {
+                editFieldRow(label: "标题", placeholder: "壁纸标题", text: $viewModel.editTitle)
+                Divider().padding(.horizontal, 12)
+                editFieldRow(label: "描述", placeholder: "一句话描述（用于全文搜索）", text: $viewModel.editDescription)
+                Divider().padding(.horizontal, 12)
+                editFieldRow(label: "标签", placeholder: "逗号分隔，如：动漫, 夜晚, 城市", text: $viewModel.editTags)
+            }
+            .background(Color.primary.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+
+            // 分类 / 分辨率 / 色系
+            HStack(spacing: 10) {
+                editPickerColumn(label: "分类", selection: $viewModel.editCategory, options: categories)
+                editPickerColumn(label: "分辨率", selection: $viewModel.editResolution, options: resolutions)
+                editPickerColumn(label: "色系", selection: $viewModel.editColor, options: colors)
+            }
+
+            // 操作按钮
+            HStack(spacing: 10) {
                 Button(action: { withAnimation { viewModel.cancelEdit() } }) {
-                    Text("取消").fontWeight(.medium)
-                        .padding(.horizontal, 24).padding(.vertical, 8)
-                        .background(Color.primary.opacity(0.1)).cornerRadius(8)
+                    Text("取消")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 9)
+                        .background(Color.primary.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                        .overlay(RoundedRectangle(cornerRadius: 9)
+                            .strokeBorder(Color.primary.opacity(0.09), lineWidth: 1))
                 }.buttonStyle(.plain)
+
                 Button(action: { viewModel.saveWallpaperEdit() }) {
-                    Text("保存修改").fontWeight(.bold)
-                        .padding(.horizontal, 24).padding(.vertical, 8)
-                        .background(Color.accentColor).foregroundColor(.white).cornerRadius(8)
+                    Text("保存修改")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity).padding(.vertical, 9)
+                        .background(LinearGradient.brand)
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                        .shadow(color: Color.brandPurple.opacity(0.3), radius: 5, y: 2)
                 }.buttonStyle(.plain)
             }
         }
-        .padding(30)
+        .padding(26)
         .frame(width: 420)
-        .background(RoundedRectangle(cornerRadius: 24).fill(.ultraThinMaterial).shadow(color: .black.opacity(0.15), radius: 24, y: 10))
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 20)
+            .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
+        .shadow(color: .black.opacity(0.2), radius: 30, y: 12)
+    }
+
+    @ViewBuilder
+    private func editFieldRow(label: String, placeholder: String, text: Binding<String>) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.5))
+                .frame(width: 42, alignment: .trailing)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private func editPickerColumn(label: String, selection: Binding<String>, options: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.5))
+            Picker("", selection: selection) {
+                ForEach(options, id: \.self) { Text($0).tag($0) }
+            }
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -664,18 +855,91 @@ struct CustomThemeToggleView: View {
 }
 struct NavPillButtonView: View {
     let title: String; let icon: String; let isSelected: Bool; var showBadge: Bool = false; let action: () -> Void
-    var bgColor: Color { isSelected ? Color.accentColor.opacity(0.15) : Color.clear }; var fgColor: Color { isSelected ? Color.accentColor : Color.primary.opacity(0.6) }
-    var body: some View { Button(action: action) { HStack(spacing: 6) { Image(systemName: icon).font(.system(size: 12)); Text(title).font(.system(size: 13, weight: isSelected ? .bold : .regular)) }.foregroundColor(fgColor).padding(.vertical, 8).padding(.horizontal, 16).background(bgColor).clipShape(Capsule()).overlay(ZStack { if showBadge { Text("N").font(.system(size: 8, weight: .bold)).foregroundColor(.white).padding(4).background(Color.red).clipShape(Circle()).offset(x: 10, y: -10) } }, alignment: .topTrailing) }.buttonStyle(.plain) }
+    var bgColor: Color { isSelected ? Color.brandPurple.opacity(0.15) : Color.clear }; var fgColor: Color { isSelected ? Color.brandPurple : Color.primary.opacity(0.6) }
+    var body: some View { Button(action: action) { HStack(spacing: 6) { Image(systemName: icon).font(.system(size: 12)); Text(title).font(.system(size: 13, weight: isSelected ? .semibold : .regular)) }.foregroundColor(fgColor).padding(.vertical, 8).padding(.horizontal, 16).background(bgColor).clipShape(Capsule()).overlay(ZStack { if showBadge { Text("N").font(.system(size: 8, weight: .bold)).foregroundColor(.white).padding(4).background(Color.red).clipShape(Circle()).offset(x: 10, y: -10) } }, alignment: .topTrailing) }.buttonStyle(.plain) }
 }
 struct FilterTagView: View {
-    let title: String; var icon: String? = nil; let isSelected: Bool
-    var fgColor: Color { isSelected ? Color.accentColor : Color.primary.opacity(0.7) }; var bgColor: Color { isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.05) }
-    var body: some View { HStack(spacing: 4) { if let icon = icon { Image(systemName: icon).font(.system(size: 11)) }; Text(title).font(.system(size: 13)) }.foregroundColor(fgColor).padding(.vertical, 8).padding(.horizontal, 16).background(bgColor).clipShape(Capsule()) }
+    let title: String
+    var icon: String? = nil
+    let isSelected: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let icon = icon {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            Text(title)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+        }
+        .foregroundStyle(
+            isSelected
+                ? AnyShapeStyle(LinearGradient.brand)
+                : AnyShapeStyle(isHovered ? Color.primary.opacity(0.85) : Color.primary.opacity(0.65))
+        )
+        .padding(.vertical, 7).padding(.horizontal, 14)
+        .background(
+            isSelected
+                ? Color.brandPurple.opacity(0.1)
+                : Color.primary.opacity(isHovered ? 0.08 : 0.05)
+        )
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    isSelected
+                        ? AnyShapeStyle(LinearGradient(
+                            colors: [Color.brandPurple.opacity(0.55), Color.brandPink.opacity(0.55)],
+                            startPoint: .leading, endPoint: .trailing
+                          ))
+                        : AnyShapeStyle(Color.clear),
+                    lineWidth: 1
+                )
+        )
+        .onHover { isHovered = $0 }
+        .animation(.easeInOut(duration: 0.1), value: isHovered)
+    }
 }
 struct PageNumberCircleView: View {
-    let number: Int; let isCurrent: Bool; let action: () -> Void
-    var fgColor: Color { isCurrent ? Color.accentColor : Color.primary.opacity(0.7) }; var bgColor: Color { isCurrent ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.05) }
-    var body: some View { Button(action: action) { Text("\(number)").font(.system(size: 13, weight: isCurrent ? .bold : .medium)).foregroundColor(fgColor).frame(width: 32, height: 32).background(bgColor).clipShape(Circle()) }.buttonStyle(.plain) }
+    let number: Int
+    let isCurrent: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    private static let gradientColors = [Color(hex: "#7C6BF5"), Color(hex: "#A855F7")]
+
+    var body: some View {
+        Button(action: action) {
+            Text("\(number)")
+                .font(.system(size: 12, weight: isCurrent ? .bold : .medium))
+                .foregroundColor(isCurrent ? .white : (isHovered ? Color(hex: "#A855F7") : .primary.opacity(0.7)))
+                .frame(width: number >= 100 ? nil : 28, height: 28)
+                .padding(.horizontal, number >= 100 ? 8 : 0)
+                .background(
+                    Group {
+                        if isCurrent {
+                            LinearGradient(
+                                colors: Self.gradientColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        } else {
+                            LinearGradient(
+                                colors: [Color(hex: "#7C6BF5").opacity(isHovered ? 0.12 : 0),
+                                         Color(hex: "#A855F7").opacity(isHovered ? 0.12 : 0)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        }
+                    }
+                )
+                .clipShape(number >= 100 ? AnyShape(Capsule()) : AnyShape(Circle()))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
+    }
 }
 
 // MARK: - 关于页面
@@ -690,40 +954,71 @@ struct AboutView: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 18) {
+            // App 图标 + 渐变圆环
             if let icon = NSApp.applicationIconImage {
-                Image(nsImage: icon).resizable().frame(width: 80, height: 80).cornerRadius(18)
-                    .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 80, height: 80)
+                    .cornerRadius(18)
+                    .shadow(color: Color.brandPurple.opacity(0.2), radius: 10, y: 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(LinearGradient.brand, lineWidth: 2)
+                            .opacity(0.5)
+                    )
             }
 
-            VStack(spacing: 6) {
-                Text("胖楼壁纸").font(.system(size: 22, weight: .bold))
-                Text(versionString).font(.system(size: 13)).foregroundColor(.secondary)
+            VStack(spacing: 4) {
+                Text("胖楼壁纸").font(.displayTitle)
+                Text(versionString)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary.opacity(0.7))
             }
 
-            Divider().padding(.horizontal, 20)
-
-            VStack(spacing: 6) {
-                Text("一款简洁优雅的 Mac 桌面壁纸软件")
-                    .font(.system(size: 13)).foregroundColor(.secondary)
-                Text("支持静态壁纸与动态视频，云端同步，本地轮播")
-                    .font(.system(size: 12)).foregroundColor(.secondary.opacity(0.8))
+            // 特性列表
+            VStack(alignment: .leading, spacing: 8) {
+                aboutFeatureRow(icon: "photo.stack", text: "静态壁纸与动态视频")
+                aboutFeatureRow(icon: "arrow.triangle.2.circlepath", text: "云端同步，本地轮播")
+                aboutFeatureRow(icon: "magnifyingglass", text: "Meilisearch 全文搜索")
             }
+            .padding(.horizontal, 4)
+
+            Divider().padding(.horizontal, 16).opacity(0.5)
 
             Text("© 2026 唐潇. 保留所有权利.")
-                .font(.system(size: 11)).foregroundColor(.secondary.opacity(0.6))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary.opacity(0.5))
 
             Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { viewModel.showAbout = false } }) {
-                Text("好").fontWeight(.semibold)
-                    .padding(.horizontal, 32).padding(.vertical, 8)
-                    .background(Color.accentColor).foregroundColor(.white).cornerRadius(8)
+                Text("好")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 40).padding(.vertical, 9)
+                    .background(LinearGradient.brand)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.brandPurple.opacity(0.35), radius: 6, y: 3)
             }.buttonStyle(.plain)
         }
-        .padding(30)
+        .padding(28)
         .frame(width: 320)
-        .background(RoundedRectangle(cornerRadius: 24).fill(.ultraThinMaterial))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 22).fill(.ultraThinMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 22)
+            .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
         .shadow(color: .black.opacity(0.15), radius: 24, y: 10)
+    }
+
+    @ViewBuilder
+    private func aboutFeatureRow(icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(LinearGradient.brand)
+                .frame(width: 20)
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+        }
     }
 }
 
@@ -733,9 +1028,7 @@ struct WallpaperPreviewView: View {
     let item: WallpaperItem
     @ObservedObject var viewModel: WallpaperViewModel
 
-    private var isDownloaded: Bool {
-        FileManager.default.fileExists(atPath: WallpaperCacheManager.shared.getLocalPath(for: item.fullURL).path)
-    }
+    @State private var isDownloaded: Bool = false
     private var isDownloading: Bool { viewModel.downloadProgress[item.id] != nil }
 
     private var cleanTitle: String {
@@ -827,9 +1120,15 @@ struct WallpaperPreviewView: View {
                         Color.black.opacity(0.6)
                         VStack(spacing: 10) {
                             ZStack {
-                                Circle().stroke(Color.white.opacity(0.2), lineWidth: 4).frame(width: 52, height: 52)
+                                Circle().stroke(Color.white.opacity(0.15), lineWidth: 4).frame(width: 52, height: 52)
                                 Circle().trim(from: 0, to: CGFloat(progress))
-                                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                                    .stroke(
+                                        AngularGradient(
+                                            colors: [Color.brandPurple, Color.brandPink, Color.brandPurple],
+                                            center: .center
+                                        ),
+                                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                                    )
                                     .frame(width: 52, height: 52).rotationEffect(.degrees(-90))
                                     .animation(.linear(duration: 0.1), value: progress)
                             }
@@ -902,7 +1201,7 @@ struct WallpaperPreviewView: View {
                                 }
                                 .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                                 .frame(maxWidth: .infinity).padding(.vertical, 11)
-                                .background(Color.accentColor)
+                                .background(Color.brandPurple)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                             }.buttonStyle(.plain)
                         } else {
@@ -917,7 +1216,7 @@ struct WallpaperPreviewView: View {
                                 }
                                 .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                                 .frame(maxWidth: .infinity).padding(.vertical, 11)
-                                .background(Color.accentColor)
+                                .background(Color.brandPurple)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                             }.buttonStyle(.plain).disabled(isDownloading)
                             // 次级按钮：下载壁纸（全宽，ghost）
@@ -948,7 +1247,7 @@ struct WallpaperPreviewView: View {
                             }
                             .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
-                            .background(Color.accentColor)
+                            .background(Color.brandPurple)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }.buttonStyle(.plain).disabled(isDownloading)
                         // 次级按钮：加入轮播（全宽，ghost）
@@ -975,8 +1274,15 @@ struct WallpaperPreviewView: View {
         .frame(width: 560)
         .task(id: item.id) {
             await fetchFileSize()
+            let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
+            isDownloaded = FileManager.default.fileExists(atPath: localURL.path)
+        }
+        .onChange(of: viewModel.cacheVersion) { _ in
+            let localURL = WallpaperCacheManager.shared.getLocalPath(for: item.fullURL)
+            isDownloaded = FileManager.default.fileExists(atPath: localURL.path)
         }
         .onAppear {
+            guard keyMonitor == nil else { return }
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 switch event.keyCode {
                 case 123: // ← 左箭头
@@ -1030,12 +1336,7 @@ struct WallpaperPreviewView: View {
         }
     }
 
-    private func formatFileSize(_ bytes: Int64) -> String {
-        if bytes < 1024 { return "\(bytes) B" }
-        if bytes < 1024 * 1024 { return String(format: "%.1f KB", Double(bytes) / 1024) }
-        if bytes < 1024 * 1024 * 1024 { return String(format: "%.1f MB", Double(bytes) / (1024 * 1024)) }
-        return String(format: "%.1f GB", Double(bytes) / (1024 * 1024 * 1024))
-    }
+    private func formatFileSize(_ bytes: Int64) -> String { formatBytes(bytes) }
 }
 
 // MARK: - 加入合集弹窗
@@ -1048,7 +1349,7 @@ struct AddToCollectionView: View {
     var body: some View {
         VStack(spacing: 20) {
             HStack {
-                Text("加入合集").font(.system(size: 18, weight: .bold))
+                Text("加入合集").font(.system(size: 17, weight: .semibold))
                 Spacer()
                 Button(action: { viewModel.addToCollectionTargetItem = nil }) {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundColor(.primary)
@@ -1064,7 +1365,7 @@ struct AddToCollectionView: View {
                         HStack(spacing: 6) { Image(systemName: "plus.circle.fill"); Text("新建合集").fontWeight(.bold) }
                             .font(.system(size: 13)).foregroundColor(.white)
                             .padding(.vertical, 8).padding(.horizontal, 16)
-                            .background(Color.accentColor).clipShape(Capsule())
+                            .background(Color.brandPurple).clipShape(Capsule())
                     }.buttonStyle(.plain)
                 }.padding(.vertical, 8)
             } else {
@@ -1092,7 +1393,7 @@ struct AddToCollectionView: View {
                                     }
                                     Spacer()
                                     Image(systemName: isIn ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(isIn ? .accentColor : Color.primary.opacity(0.3))
+                                        .foregroundColor(isIn ? .brandPurple : Color.primary.opacity(0.3))
                                         .font(.system(size: 20))
                                 }
                                 .padding(.horizontal, 12).padding(.vertical, 8)
@@ -1106,7 +1407,7 @@ struct AddToCollectionView: View {
                 if !isCreating {
                     Button(action: { isCreating = true }) {
                         HStack(spacing: 6) { Image(systemName: "plus.circle"); Text("新建合集") }
-                            .font(.system(size: 13)).foregroundColor(.accentColor)
+                            .font(.system(size: 13)).foregroundColor(.brandPurple)
                     }.buttonStyle(.plain)
                 }
             }
@@ -1121,7 +1422,7 @@ struct AddToCollectionView: View {
                     Button(action: createAndAdd) {
                         Text("创建").fontWeight(.bold).foregroundColor(.white)
                             .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(newName.isEmpty ? Color.secondary : Color.accentColor).cornerRadius(6)
+                            .background(newName.isEmpty ? Color.secondary : Color.brandPurple).cornerRadius(6)
                     }.buttonStyle(.plain).disabled(newName.isEmpty)
                     Button(action: { isCreating = false; newName = "" }) {
                         Text("取消").font(.system(size: 13)).foregroundColor(.secondary)
@@ -1132,7 +1433,7 @@ struct AddToCollectionView: View {
             Button(action: { viewModel.addToCollectionTargetItem = nil }) {
                 Text("完成").fontWeight(.semibold)
                     .padding(.horizontal, 32).padding(.vertical, 8)
-                    .background(Color.accentColor).foregroundColor(.white).cornerRadius(8)
+                    .background(Color.brandPurple).foregroundColor(.white).cornerRadius(8)
             }.buttonStyle(.plain)
         }
         .padding(24)
@@ -1149,5 +1450,28 @@ struct AddToCollectionView: View {
         }
         newName = ""
         isCreating = false
+    }
+}
+
+// MARK: - Brand Switch Toggle Style
+
+struct BrandSwitchStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let isOn = configuration.isOn
+        ZStack {
+            Capsule()
+                .fill(isOn ? Color.brandPurple : Color.primary.opacity(0.15))
+                .frame(width: 40, height: 22)
+                .overlay(
+                    Capsule().strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+                )
+            Circle()
+                .fill(.white)
+                .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
+                .frame(width: 18, height: 18)
+                .offset(x: isOn ? 9 : -9)
+        }
+        .animation(.spring(response: 0.2, dampingFraction: 0.75), value: isOn)
+        .onTapGesture { configuration.isOn.toggle() }
     }
 }

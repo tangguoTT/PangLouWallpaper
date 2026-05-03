@@ -41,24 +41,26 @@ struct PangLouWallpaperApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        // 1. 你的主界面（原封不动）
-        // 🌟 我们只给它加了一个身份证号 id: "mainWindow"，方便我们以后呼唤它
-        WindowGroup(id: "mainWindow") {
+        // Window（非 WindowGroup）确保全局唯一实例，不会重复创建窗口
+        Window("胖楼壁纸", id: "mainWindow") {
             ContentView()
         }
-        
-        // 2. 🌟 核心魔法 2：在屏幕右上角状态栏生成图标
-        // "camera.aperture" 是那个光圈图标，和你在导航栏用的一样
+        .defaultSize(width: 1200, height: 820)
+
         MenuBarExtra("胖楼壁纸", systemImage: "camera.aperture") {
-            
-            // 下拉菜单按钮一：打开界面
+
             Button("打开主界面") {
-                // 根据身份证号，把主窗口叫出来
-                openWindow(id: "mainWindow")
-                // 并把它强行按在屏幕最上面，防止被浏览器等其他软件挡住
+                // 优先复用已有窗口：最小化则恢复，否则直接前置
+                if let win = NSApp.windows.first(where: { $0.identifier?.rawValue == "mainWindow" })
+                    ?? NSApp.windows.first(where: { !($0 is NSPanel) && $0.canBecomeMain }) {
+                    if win.isMiniaturized { win.deminiaturize(nil) }
+                    win.makeKeyAndOrderFront(nil)
+                } else {
+                    openWindow(id: "mainWindow")
+                }
                 NSApp.activate(ignoringOtherApps: true)
             }
-            
+
             Divider()
 
             Button("随机换一张壁纸") {
@@ -70,7 +72,6 @@ struct PangLouWallpaperApp: App {
             Button("退出胖楼壁纸") {
                 NSApplication.shared.terminate(nil)
             }
-            
         }
     }
 }

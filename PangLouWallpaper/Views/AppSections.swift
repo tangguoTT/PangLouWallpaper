@@ -17,7 +17,7 @@ struct TopNavigationBarView: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @Binding var isDarkMode: Bool
     @State private var showClearCacheAlert = false
-    var body: some View { HStack { HStack(spacing: 8) { Image(systemName: "camera.aperture").font(.system(size: 22)); Text("胖楼壁纸").font(.system(size: 18, weight: .bold)) }.padding(.horizontal, 16).padding(.vertical, 8).background(capsuleBgColor).clipShape(Capsule()).foregroundColor(.primary); Spacer(); HStack(spacing: 4) { NavPillButtonView(title: AppTab.pc.rawValue, icon: "desktopcomputer", isSelected: viewModel.currentTab == .pc) { viewModel.currentTab = .pc }; NavPillButtonView(title: AppTab.downloaded.rawValue, icon: "square.and.arrow.down", isSelected: viewModel.currentTab == .downloaded) { viewModel.currentTab = .downloaded }; NavPillButtonView(title: AppTab.slideshow.rawValue, icon: "photo.on.rectangle.angled", isSelected: viewModel.currentTab == .slideshow) { viewModel.currentTab = .slideshow }; NavPillButtonView(title: AppTab.collection.rawValue, icon: "rectangle.stack", isSelected: viewModel.currentTab == .collection) { viewModel.currentTab = .collection }; NavPillButtonView(title: AppTab.upload.rawValue, icon: "icloud.and.arrow.up", isSelected: viewModel.currentTab == .upload) { viewModel.currentTab = .upload } }.padding(4).background(capsuleBgColor).clipShape(Capsule()); Spacer(); HStack(spacing: 15) { CustomThemeToggleView(isDarkMode: $isDarkMode); Image(systemName: "bell").font(.system(size: 16)).foregroundColor(.primary); Button(action: { viewModel.randomWallpaper() }) { Image(systemName: "shuffle").font(.system(size: 16)).foregroundColor(.primary).frame(width: 24, height: 24) }.buttonStyle(.plain).help("随机换一张壁纸"); Menu { Button(action: { viewModel.showAbout = true }) { Text("关于胖楼壁纸"); Image(systemName: "info.circle") }; Divider(); Menu("壁纸适配：\(viewModel.wallpaperFit.rawValue)") { ForEach(WallpaperFit.allCases, id: \.self) { fit in Button(action: { viewModel.wallpaperFit = fit }) { if viewModel.wallpaperFit == fit { Label(fit.rawValue, systemImage: "checkmark") } else { Text(fit.rawValue) } } } }; Menu("显示器：\(viewModel.targetScreenName)") { ForEach(viewModel.availableScreenNames, id: \.self) { name in Button(action: { viewModel.targetScreenName = name }) { if viewModel.targetScreenName == name { Label(name, systemImage: "checkmark") } else { Text(name) } } } }; Toggle("开机自动启动", isOn: Binding(get: { viewModel.isAutoStartEnabled }, set: { viewModel.toggleAutoStart(enable: $0) })); Button(action: { viewModel.importLocalWallpaper() }) { Text("导入本地壁纸"); Image(systemName: "folder.badge.plus") }; Divider(); Button(role: .destructive, action: { showClearCacheAlert = true }) { Text("清除全部缓存 (\(viewModel.cacheSizeString))"); Image(systemName: "trash") } } label: { Image(systemName: "gearshape.fill").font(.system(size: 16)).foregroundColor(.primary).frame(width: 24, height: 24) }.menuStyle(.borderlessButton).alert("确定要清除缓存吗？", isPresented: $showClearCacheAlert) { Button("取消", role: .cancel) { }; Button("确认清除", role: .destructive) { viewModel.clearCache() } } message: { Text("这将释放 \(viewModel.cacheSizeString) 磁盘空间。正在使用的壁纸和您的轮播列表不会被删除。") }; UserAccountButtonView(viewModel: viewModel) } } }
+    var body: some View { HStack { HStack(spacing: 8) { Image(systemName: "camera.aperture").font(.system(size: 22)); Text("胖楼壁纸").font(.system(size: 18, weight: .bold)) }.padding(.horizontal, 16).padding(.vertical, 8).background(capsuleBgColor).clipShape(Capsule()).foregroundColor(.primary); Spacer(); HStack(spacing: 4) { NavPillButtonView(title: AppTab.pc.rawValue, icon: "desktopcomputer", isSelected: viewModel.currentTab == .pc) { viewModel.currentTab = .pc }; NavPillButtonView(title: AppTab.downloaded.rawValue, icon: "square.and.arrow.down", isSelected: viewModel.currentTab == .downloaded) { viewModel.currentTab = .downloaded }; NavPillButtonView(title: AppTab.slideshow.rawValue, icon: "photo.on.rectangle.angled", isSelected: viewModel.currentTab == .slideshow) { viewModel.currentTab = .slideshow }; NavPillButtonView(title: AppTab.collection.rawValue, icon: "rectangle.stack", isSelected: viewModel.currentTab == .collection) { viewModel.currentTab = .collection }; NavPillButtonView(title: AppTab.upload.rawValue, icon: "icloud.and.arrow.up", isSelected: viewModel.currentTab == .upload) { viewModel.currentTab = .upload } }.padding(4).background(capsuleBgColor).clipShape(Capsule()); Spacer(); HStack(spacing: 15) { CustomThemeToggleView(isDarkMode: $isDarkMode); Image(systemName: "bell").font(.system(size: 16)).foregroundColor(.primary); Button(action: { viewModel.randomWallpaper() }) { Image(systemName: "shuffle").font(.system(size: 16)).foregroundColor(.primary).frame(width: 24, height: 24) }.buttonStyle(.plain).help("随机换一张壁纸"); Menu { Button(action: { viewModel.showAbout = true }) { Text("关于胖楼壁纸"); Image(systemName: "info.circle") }; Toggle("开机自动启动", isOn: Binding(get: { viewModel.isAutoStartEnabled }, set: { viewModel.toggleAutoStart(enable: $0) })); Button(action: { viewModel.importLocalWallpaper() }) { Text("导入本地壁纸"); Image(systemName: "folder.badge.plus") }; Divider(); Button(role: .destructive, action: { showClearCacheAlert = true }) { Text("清除全部缓存 (\(viewModel.cacheSizeString))"); Image(systemName: "trash") } } label: { Image(systemName: "gearshape.fill").font(.system(size: 16)).foregroundColor(.primary).frame(width: 24, height: 24) }.menuStyle(.borderlessButton).alert("确定要清除缓存吗？", isPresented: $showClearCacheAlert) { Button("取消", role: .cancel) { }; Button("确认清除", role: .destructive) { viewModel.clearCache() } } message: { Text("这将释放 \(viewModel.cacheSizeString) 磁盘空间。正在使用的壁纸和您的轮播列表不会被删除。") }; UserAccountButtonView(viewModel: viewModel) } } }
 }
 
 // MARK: - 登录按钮（导航栏右侧）
@@ -37,12 +37,12 @@ struct UserAccountButtonView: View {
                                 .clipShape(Circle())
                         } else {
                             Image(systemName: "person.crop.circle.fill")
-                                .font(.system(size: 22)).foregroundColor(.accentColor)
+                                .font(.system(size: 22)).foregroundColor(.brandPurple)
                         }
                     }
                 } else {
                     Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 22)).foregroundColor(.accentColor)
+                        .font(.system(size: 22)).foregroundColor(.brandPurple)
                 }
             }.buttonStyle(.plain).help("用户空间")
         } else {
@@ -68,7 +68,7 @@ struct LoginRequiredView: View {
                 .font(.system(size: 60))
                 .foregroundColor(.primary.opacity(0.2))
             Text("上传功能需要登录")
-                .font(.system(size: 18, weight: .bold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.primary.opacity(0.6))
             Text("登录后即可上传壁纸，合集也会自动云端同步")
                 .font(.system(size: 14))
@@ -77,7 +77,7 @@ struct LoginRequiredView: View {
                 Text("立即登录 / 注册")
                     .fontWeight(.bold).foregroundColor(.white)
                     .padding(.horizontal, 28).padding(.vertical, 12)
-                    .background(Color.accentColor).clipShape(Capsule())
+                    .background(Color.brandPurple).clipShape(Capsule())
             }.buttonStyle(.plain)
             Spacer()
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -95,91 +95,93 @@ struct UploadManagerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // ── 顶部工具栏 ────────────────────────────────
-            HStack(spacing: 10) {
-                Button(action: { viewModel.selectFilesForUpload() }) {
-                    Label("添加文件", systemImage: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }.buttonStyle(.plain)
-
+            // ── 顶部工具栏 ──────────────────────────────
+            HStack(alignment: .center, spacing: 10) {
                 if !viewModel.pendingUploads.isEmpty {
-                    Text("\(viewModel.pendingUploads.count) 个文件")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 7) {
+                        Text("\(viewModel.pendingUploads.count)")
+                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Color.brandPurple.opacity(0.85))
+                            .clipShape(Capsule())
+                        Text("个文件待上传")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 Spacer()
 
                 if viewModel.isUploading {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("上传中…").font(.system(size: 12)).foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        HStack(spacing: 5) {
+                            ProgressView().controlSize(.small)
+                            Text("上传中…").font(.system(size: 12)).foregroundColor(.secondary)
+                        }
+                        Button(action: { viewModel.cancelAllUploads() }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "stop.fill").font(.system(size: 10))
+                                Text("停止")
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Color.red.opacity(0.8))
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                        }.buttonStyle(.plain)
                     }
-                    Button(action: { viewModel.cancelAllUploads() }) {
-                        Label("停止", systemImage: "stop.fill")
-                            .font(.system(size: 12, weight: .semibold))
+                } else {
+                    HStack(spacing: 8) {
+                        Button(action: { viewModel.selectFilesForUpload() }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                                Text("添加文件")
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary.opacity(0.75))
                             .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Color.red.opacity(0.85))
-                            .foregroundColor(.white)
+                            .background(Color.primary.opacity(0.06))
                             .clipShape(RoundedRectangle(cornerRadius: 7))
-                    }.buttonStyle(.plain)
-                } else if !viewModel.pendingUploads.isEmpty {
-                    Button(action: { viewModel.clearPendingUploads() }) {
-                        Text("清空")
-                            .font(.system(size: 12))
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Color.primary.opacity(0.07))
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                    }.buttonStyle(.plain)
-                    Button(action: { viewModel.executeUpload() }) {
-                        Label("上传全部 (\(viewModel.pendingUploads.count))", systemImage: "arrow.up.circle.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(Color(hex: "#449B3E"))
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }.buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 20).padding(.vertical, 12)
+                            .overlay(RoundedRectangle(cornerRadius: 7)
+                                .strokeBorder(Color.primary.opacity(0.09), lineWidth: 1))
+                        }.buttonStyle(.plain)
 
-            Divider()
+                        if !viewModel.pendingUploads.isEmpty {
+                            Button(action: { viewModel.clearPendingUploads() }) {
+                                Text("清空")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 12).padding(.vertical, 6)
+                                    .background(Color.primary.opacity(0.05))
+                                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                            }.buttonStyle(.plain)
 
-            if viewModel.pendingUploads.isEmpty {
-                // ── 空状态 ───────────────────────────────────
-                Button(action: { viewModel.selectFilesForUpload() }) {
-                    VStack(spacing: 14) {
-                        Image(systemName: "folder.badge.plus")
-                            .font(.system(size: 42, weight: .thin))
-                            .foregroundColor(.secondary.opacity(0.45))
-                        VStack(spacing: 5) {
-                            Text("点击选择文件")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.primary.opacity(0.45))
-                            Text("支持 JPG、PNG、MP4、MOV 格式")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary.opacity(0.5))
+                            Button(action: { viewModel.executeUpload() }) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold))
+                                    Text("全部上传 (\(viewModel.pendingUploads.count))")
+                                }
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16).padding(.vertical, 7)
+                                .background(LinearGradient.brand)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .shadow(color: Color.brandPurple.opacity(0.35), radius: 5, y: 2)
+                            }.buttonStyle(.plain)
                         }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [7, 4]))
-                            .foregroundColor(.secondary.opacity(0.22))
-                    )
-                    .padding(28)
                 }
-                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 4).padding(.bottom, 16)
+
+            if viewModel.pendingUploads.isEmpty {
+                UploadDropZoneView { viewModel.selectFilesForUpload() }
             } else {
-                // ── 列表 ─────────────────────────────────────
                 ScrollView {
-                    VStack(spacing: 0) {
+                    VStack(spacing: 8) {
                         ForEach($viewModel.pendingUploads) { $item in
-                            UploadRowView(
+                            UploadCardView(
                                 item: $item,
                                 progress: viewModel.uploadProgress[item.id],
                                 categories: uploadCategories,
@@ -187,19 +189,85 @@ struct UploadManagerView: View {
                                 colors: uploadColors,
                                 onDelete: { viewModel.removePendingUpload(id: item.id) }
                             )
-                            Divider().padding(.leading, 20)
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.bottom, 16)
                 }
             }
         }
+        .padding(.horizontal, 4)
     }
 }
 
-// MARK: - Upload Row (列表行)
+// MARK: - Upload Drop Zone (空状态)
 
-struct UploadRowView: View {
+struct UploadDropZoneView: View {
+    let onTap: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 22) {
+                ZStack {
+                    Circle()
+                        .fill(isHovered
+                              ? Color.brandPurple.opacity(0.12)
+                              : Color.primary.opacity(0.05))
+                        .frame(width: 88, height: 88)
+                        .animation(.easeInOut(duration: 0.15), value: isHovered)
+                    Image(systemName: "arrow.up.to.line")
+                        .font(.system(size: 30, weight: .thin))
+                        .foregroundStyle(
+                            isHovered
+                                ? AnyShapeStyle(LinearGradient.brand)
+                                : AnyShapeStyle(Color.secondary.opacity(0.4))
+                        )
+                }
+
+                VStack(spacing: 7) {
+                    Text("点击选择文件")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(isHovered ? .primary.opacity(0.75) : .primary.opacity(0.4))
+                    Text("支持图片与视频壁纸")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary.opacity(0.4))
+                }
+
+                HStack(spacing: 7) {
+                    ForEach(["JPG", "PNG", "MP4", "MOV"], id: \.self) { fmt in
+                        Text(fmt)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary.opacity(0.45))
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.04))
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                            .overlay(RoundedRectangle(cornerRadius: 5)
+                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        isHovered
+                            ? AnyShapeStyle(LinearGradient(
+                                colors: [Color.brandPurple.opacity(0.45), Color.brandPink.opacity(0.3)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing))
+                            : AnyShapeStyle(Color.primary.opacity(0.1)),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [9, 5])
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+    }
+}
+
+// MARK: - Upload Card (Linear-style 卡片)
+
+struct UploadCardView: View {
     @Binding var item: PendingUploadItem
     let progress: Double?
     let categories: [String]
@@ -211,93 +279,156 @@ struct UploadRowView: View {
     private var isVideo: Bool {
         ["mp4", "mov"].contains(item.url.pathExtension.lowercased())
     }
+    private var isUploading: Bool { (progress ?? 0) > 0 && (progress ?? 0) < 1 }
+    private var isDone: Bool { (progress ?? 0) >= 0.99 }
 
     var body: some View {
         HStack(spacing: 14) {
-            // 缩略图
+            // ── 缩略图 ──────────────────────────────────
             ZStack(alignment: .bottomLeading) {
                 UploadThumbnailView(url: item.url)
-                    .frame(width: 112, height: 70)
+                    .frame(width: 136, height: 86)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 if isVideo {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(3)
-                        .background(.black.opacity(0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .padding(5)
+                    HStack(spacing: 3) {
+                        Image(systemName: "play.fill").font(.system(size: 7, weight: .bold))
+                        Text("视频").font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(.black.opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(6)
+                }
+
+                if isUploading, let p = progress {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.black.opacity(0.42))
+                        .frame(width: 136, height: 86)
+                    UploadCircleProgress(progress: p)
+                        .frame(width: 34, height: 34)
+                        .frame(width: 136, height: 86)
+                }
+                if isDone {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.black.opacity(0.28))
+                        .frame(width: 136, height: 86)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.green.opacity(0.9))
+                        .frame(width: 136, height: 86)
                 }
             }
 
-            // 文本信息区
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    TextField("标题（留空用文件名）", text: $item.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .textFieldStyle(.plain)
-                        .frame(maxWidth: 200)
-
+            // ── 右侧元数据 ───────────────────────────────
+            VStack(alignment: .leading, spacing: 8) {
+                // 行1：文件名 + 状态 badge + 删除按钮
+                HStack(spacing: 6) {
                     Text(item.url.lastPathComponent)
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.secondary.opacity(0.5))
                         .lineLimit(1)
+                    Spacer()
+                    if isDone {
+                        uploadStatusBadge("完成", icon: "checkmark", color: .green)
+                    } else if isUploading {
+                        uploadStatusBadge("上传中", icon: "arrow.up", color: .brandPurple)
+                    }
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary.opacity(isHovered ? 0.55 : 0.25))
+                            .frame(width: 20, height: 20)
+                            .background(isHovered ? Color.primary.opacity(0.08) : Color.clear)
+                            .clipShape(Circle())
+                    }.buttonStyle(.plain)
                 }
 
-                HStack(spacing: 8) {
-                    TextField("描述（霓虹灯光、雨后街道…）", text: $item.wallpaperDescription)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .textFieldStyle(.plain)
-                        .frame(maxWidth: 220)
-
-                    TextField("标签（动漫, 夜晚, 城市）", text: $item.tags)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .textFieldStyle(.plain)
-                        .frame(maxWidth: 200)
+                // 行2：三列字段（标题 | 描述 | 标签）
+                HStack(spacing: 0) {
+                    uploadFieldColumn(label: "标题", placeholder: "留空则使用文件名", text: $item.title)
+                    uploadFieldDivider()
+                    uploadFieldColumn(label: "描述", placeholder: "霓虹灯光、雨后街道…", text: $item.wallpaperDescription)
+                    uploadFieldDivider()
+                    uploadFieldColumn(label: "标签", placeholder: "动漫, 夜晚, 城市", text: $item.tags)
                 }
+                .padding(.vertical, 7).padding(.horizontal, 10)
+                .background(Color.primary.opacity(0.025))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
 
-                if let p = progress {
-                    HStack(spacing: 6) {
-                        ProgressView(value: p)
-                            .tint(.accentColor)
-                            .controlSize(.small)
-                            .frame(maxWidth: 160)
-                        Text("\(Int(p * 100))%")
-                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                            .foregroundColor(.accentColor)
+                // 行3：分类选择器 + 进度
+                HStack(spacing: 6) {
+                    UploadPickerMenu(label: item.category.isEmpty ? "分类" : item.category,
+                                     options: categories, selection: $item.category)
+                    UploadPickerMenu(label: item.resolution.isEmpty ? "分辨率" : item.resolution,
+                                     options: resolutions, selection: $item.resolution)
+                    UploadPickerMenu(label: item.color.isEmpty ? "色系" : item.color,
+                                     options: colors, selection: $item.color)
+                    Spacer()
+                    if let p = progress, !isDone {
+                        HStack(spacing: 5) {
+                            ProgressView(value: p)
+                                .tint(.brandPurple)
+                                .controlSize(.small)
+                                .frame(width: 80)
+                            Text("\(Int(p * 100))%")
+                                .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                                .foregroundColor(.brandPurple)
+                        }
                     }
                 }
             }
-
-            Spacer()
-
-            // 内联选择器
-            HStack(spacing: 8) {
-                UploadPickerMenu(label: item.category.isEmpty ? "分类" : item.category,
-                                 options: categories, selection: $item.category)
-                UploadPickerMenu(label: item.resolution.isEmpty ? "分辨率" : item.resolution,
-                                 options: resolutions, selection: $item.resolution)
-                UploadPickerMenu(label: item.color.isEmpty ? "色系" : item.color,
-                                 options: colors, selection: $item.color)
-            }
-
-            // 删除按钮
-            Button(action: onDelete) {
-                Image(systemName: "trash")
-                    .font(.system(size: 13))
-                    .foregroundColor(isHovered ? .red : .secondary.opacity(0.4))
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 4)
+            .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .background(isHovered ? Color.primary.opacity(0.04) : Color.clear)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isHovered ? Color.primary.opacity(0.05) : Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(
+                    isHovered ? Color.primary.opacity(0.13) : Color.primary.opacity(0.07),
+                    lineWidth: 1
+                )
+        )
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: 0.12), value: isHovered)
+    }
+
+    @ViewBuilder
+    private func uploadStatusBadge(_ text: String, icon: String, color: Color) -> some View {
+        Label(text, systemImage: icon)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(color)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(color.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    @ViewBuilder
+    private func uploadFieldColumn(label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.5))
+                .kerning(0.3)
+            TextField(placeholder, text: text)
+                .font(.system(size: 12))
+                .textFieldStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func uploadFieldDivider() -> some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(width: 1, height: 30)
+            .padding(.horizontal, 10)
     }
 }
 
@@ -325,7 +456,7 @@ struct UploadPickerMenu: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(selection.isEmpty
                               ? Color.primary.opacity(isHovered ? 0.08 : 0.05)
-                              : Color.accentColor.opacity(isHovered ? 0.2 : 0.12))
+                              : Color.brandPurple.opacity(isHovered ? 0.2 : 0.12))
                 )
         }
         .menuStyle(.borderlessButton)
@@ -381,10 +512,16 @@ struct UploadCircleProgress: View {
     let progress: Double
     var body: some View {
         ZStack {
-            Circle().stroke(Color.white.opacity(0.2), lineWidth: 3)
+            Circle().stroke(Color.white.opacity(0.15), lineWidth: 3)
             Circle()
                 .trim(from: 0, to: CGFloat(progress))
-                .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(
+                    AngularGradient(
+                        colors: [Color.brandPurple, Color.brandPink, Color.brandPurple],
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                )
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 0.1), value: progress)
         }
@@ -402,7 +539,7 @@ struct ReviewQueueView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("待审核壁纸")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.displayTitle)
                     Text("审核通过后将显示在「电脑壁纸」界面")
                         .font(.system(size: 12)).foregroundColor(.secondary)
                 }
@@ -437,7 +574,7 @@ struct ReviewQueueView: View {
                     }
                     VStack(spacing: 8) {
                         Text("暂无待审核内容")
-                            .font(.system(size: 18, weight: .bold))
+                            .font(.sectionTitle)
                             .foregroundColor(.primary.opacity(0.7))
                         Text("所有用户上传的壁纸均已处理完毕")
                             .font(.system(size: 13)).foregroundColor(.secondary)
@@ -466,6 +603,8 @@ struct ReviewItemRowView: View {
     @State private var showRejectInput = false
     @State private var rejectReason = ""
     @State private var isHovered = false
+    @State private var isApproveHovered = false
+    @State private var isRejectHovered = false
 
     private func formattedDate(_ ts: Int) -> String {
         let d = Date(timeIntervalSince1970: TimeInterval(ts))
@@ -495,7 +634,7 @@ struct ReviewItemRowView: View {
                         if item.isVideo {
                             Image(systemName: "play.circle.fill")
                                 .font(.system(size: 12))
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(.brandPurple)
                         }
                     }
                     HStack(spacing: 10) {
@@ -522,7 +661,7 @@ struct ReviewItemRowView: View {
                 Spacer()
 
                 // 操作按钮
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     // 拒绝
                     Button(action: {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
@@ -531,30 +670,57 @@ struct ReviewItemRowView: View {
                     }) {
                         HStack(spacing: 5) {
                             Image(systemName: showRejectInput ? "xmark" : "hand.raised")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 11, weight: .semibold))
                             Text(showRejectInput ? "取消" : "拒绝")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                         }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(showRejectInput ? Color.secondary.opacity(0.6) : Color.red.opacity(0.8))
-                        .cornerRadius(9)
-                    }.buttonStyle(.plain)
+                        .foregroundColor(showRejectInput ? .secondary : .red.opacity(isRejectHovered ? 1.0 : 0.85))
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(
+                            showRejectInput
+                                ? Color.primary.opacity(0.06)
+                                : Color.red.opacity(isRejectHovered ? 0.14 : 0.08)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(
+                                    showRejectInput
+                                        ? Color.primary.opacity(0.1)
+                                        : Color.red.opacity(isRejectHovered ? 0.4 : 0.2),
+                                    lineWidth: 1
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { isRejectHovered = $0 }
+                    .animation(.easeInOut(duration: 0.12), value: isRejectHovered)
 
                     // 通过
                     Button(action: { viewModel.approveWallpaper(item: item) }) {
                         HStack(spacing: 5) {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.system(size: 11, weight: .bold))
                             Text("通过")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(Color(hex: "#449B3E"))
-                        .cornerRadius(9)
-                        .shadow(color: Color(hex: "#449B3E").opacity(0.35), radius: 6, y: 3)
-                    }.buttonStyle(.plain)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(
+                            isApproveHovered
+                                ? Color(hex: "#3d8f38")
+                                : Color(hex: "#449B3E")
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .shadow(
+                            color: Color(hex: "#449B3E").opacity(isApproveHovered ? 0.5 : 0.25),
+                            radius: isApproveHovered ? 8 : 4,
+                            y: isApproveHovered ? 4 : 2
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { isApproveHovered = $0 }
+                    .animation(.easeInOut(duration: 0.12), value: isApproveHovered)
                 }
             }
             .padding(14)
@@ -572,11 +738,13 @@ struct ReviewItemRowView: View {
 
                     Button(action: submitReject) {
                         Text("确认拒绝")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16).padding(.vertical, 8)
-                            .background(Color.red.opacity(0.85))
-                            .cornerRadius(8)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.red.opacity(0.9))
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(Color.red.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.red.opacity(0.3), lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
                 .padding(.horizontal, 14)
@@ -613,7 +781,7 @@ struct UserUploadsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("我的上传记录")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.displayTitle)
                     Text("共 \(viewModel.userUploads.count) 个，审核通过后将显示在电脑壁纸界面")
                         .font(.system(size: 12)).foregroundColor(.secondary)
                 }
@@ -650,13 +818,13 @@ struct UserUploadsView: View {
                 VStack(spacing: 18) {
                     Spacer()
                     ZStack {
-                        Circle().fill(Color.accentColor.opacity(0.08)).frame(width: 110, height: 110)
+                        Circle().fill(Color.brandPurple.opacity(0.08)).frame(width: 110, height: 110)
                         Image(systemName: "photo.badge.plus")
                             .font(.system(size: 42, weight: .thin))
-                            .foregroundColor(Color.accentColor.opacity(0.7))
+                            .foregroundColor(Color.brandPurple.opacity(0.7))
                     }
                     VStack(spacing: 8) {
-                        Text("还没有上传记录").font(.system(size: 18, weight: .bold)).foregroundColor(.primary.opacity(0.7))
+                        Text("还没有上传记录").font(.sectionTitle).foregroundColor(.primary.opacity(0.7))
                         Text("切换到「待上传新壁纸」选择文件并上传").font(.system(size: 13)).foregroundColor(.secondary)
                     }
                     Spacer()
@@ -698,70 +866,103 @@ struct UserUploadRowView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            AsyncThumbnailView(item: item)
-                .frame(width: 110, height: 68)
-                .cornerRadius(9).clipped()
-                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    Text(item.title)
-                        .font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                    if item.isVideo {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 12)).foregroundColor(.accentColor)
+            // 缩略图
+            ZStack(alignment: .bottomLeading) {
+                AsyncThumbnailView(item: item)
+                    .frame(width: 124, height: 78)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                if item.isVideo {
+                    HStack(spacing: 3) {
+                        Image(systemName: "play.fill").font(.system(size: 7, weight: .bold))
+                        Text("视频").font(.system(size: 9, weight: .semibold))
                     }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(.black.opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(6)
                 }
-                HStack(spacing: 8) {
+            }
+
+            // 中部信息
+            VStack(alignment: .leading, spacing: 6) {
+                Text(item.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                HStack(spacing: 6) {
                     if !item.category.isEmpty {
-                        Text(item.category)
-                            .font(.system(size: 11))
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Color.primary.opacity(0.07)).cornerRadius(4)
+                        metaTag(item.category)
                     }
                     if !item.resolution.isEmpty {
-                        Text(item.resolution)
-                            .font(.system(size: 11))
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Color.primary.opacity(0.07)).cornerRadius(4)
+                        metaTag(item.resolution)
+                    }
+                    if !item.color.isEmpty {
+                        metaTag(item.color)
                     }
                 }
+
                 Text(formattedDate(item.uploadedAt))
-                    .font(.system(size: 11)).foregroundColor(.secondary)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.6))
+
+                // 拒绝原因
+                if item.approvalStatus == .rejected,
+                   let reason = item.rejectionReason, !reason.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(.system(size: 10))
+                            .foregroundColor(.red.opacity(0.7))
+                        Text(reason)
+                            .font(.system(size: 11))
+                            .foregroundColor(.red.opacity(0.7))
+                            .lineLimit(1)
+                    }
+                }
             }
 
             Spacer()
 
-            // 审核状态徽标
-            VStack(alignment: .trailing, spacing: 6) {
-                let cfg = statusConfig
-                HStack(spacing: 5) {
-                    Image(systemName: cfg.icon)
-                        .font(.system(size: 13))
-                    Text(cfg.label)
-                        .font(.system(size: 12, weight: .semibold))
-                }
+            // 审核状态 badge
+            let cfg = statusConfig
+            Label(cfg.label, systemImage: cfg.icon)
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(cfg.color)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(cfg.color.opacity(0.12))
-                .cornerRadius(20)
-
-                // 拒绝原因
-                if item.approvalStatus == .rejected, let reason = item.rejectionReason, !reason.isEmpty {
-                    Text("原因：\(reason)")
-                        .font(.system(size: 11))
-                        .foregroundColor(.red.opacity(0.75))
-                        .multilineTextAlignment(.trailing)
-                        .lineLimit(2)
-                        .frame(maxWidth: 200, alignment: .trailing)
-                }
-            }
+                .padding(.horizontal, 9).padding(.vertical, 5)
+                .background(cfg.color.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(cfg.color.opacity(0.2), lineWidth: 1)
+                )
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(isHovered ? 0.07 : 0.04)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06), lineWidth: 1))
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isHovered ? Color.primary.opacity(0.05) : Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(
+                    isHovered ? Color.primary.opacity(0.13) : Color.primary.opacity(0.07),
+                    lineWidth: 1
+                )
+        )
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
         .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder
+    private func metaTag(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(.secondary.opacity(0.8))
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Color.primary.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
     }
 }
 
@@ -769,9 +970,13 @@ struct UserUploadRowView: View {
 struct WallpaperGridView: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @AppStorage("isSidebarVisible") private var isSidebarVisible: Bool = true
+    @Namespace private var uploadTabNamespace
     var emptyText: String {
         switch viewModel.currentTab {
-        case .pc:         return "未找到相关壁纸"
+        case .pc:
+            return viewModel.searchText.isEmpty
+                ? "未找到相关壁纸"
+                : "未找到包含「\(viewModel.searchText)」的壁纸"
         case .downloaded:
             switch viewModel.downloadedSubTab {
             case .localImports: return "还没有本地导入的壁纸"
@@ -790,47 +995,54 @@ struct WallpaperGridView: View {
             if viewModel.currentTab == .steamWorkshop {
                 SteamWorkshopView(viewModel: viewModel, isSidebarVisible: $isSidebarVisible)
             } else if viewModel.currentTab == .upload {
-                // ── Segment 选择器 ──
+                // ── 胶囊 Tab 选择器（与已下载页风格统一）──
                 HStack {
-                    if viewModel.isDeveloper {
-                        // 开发者：待上传 / 审核队列 / 管理全部
-                        Picker("", selection: $viewModel.uploadMode) {
-                            Text("待上传新壁纸").tag(UploadMode.pending)
-                            HStack {
-                                Text("审核队列")
-                                if !viewModel.pendingReviewItems.isEmpty {
-                                    Text("(\(viewModel.pendingReviewItems.count))")
-                                        .foregroundColor(.orange)
-                                }
-                            }.tag(UploadMode.review)
-                            Text("管理全部壁纸").tag(UploadMode.manage)
+                    HStack(spacing: 2) {
+                        uploadPillButton(.pending, label: "待上传新壁纸")
+                        if viewModel.isDeveloper {
+                            uploadPillButton(.review, label: "审核队列",
+                                            badge: viewModel.pendingReviewItems.count)
+                            uploadPillButton(.manage, label: "管理全部壁纸")
+                        } else {
+                            uploadPillButton(.manage, label: "我的上传记录")
                         }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 480)
-                    } else {
-                        // 普通用户：待上传 / 我的上传记录
-                        Picker("", selection: $viewModel.uploadMode) {
-                            Text("待上传新壁纸").tag(UploadMode.pending)
-                            Text("我的上传记录").tag(UploadMode.manage)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 320)
                     }
+                    .padding(3)
+                    .background(Color.primary.opacity(0.06))
+                    .clipShape(Capsule())
+                    // Pill 高亮单独走 spring，与内容区动画解耦
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.uploadMode)
                     Spacer()
                 }
                 .padding(.horizontal, 30).padding(.bottom, 15)
 
-                if !viewModel.isLoggedIn {
-                    LoginRequiredView(viewModel: viewModel)
-                } else if viewModel.uploadMode == .pending {
-                    UploadManagerView(viewModel: viewModel)
-                } else if viewModel.uploadMode == .review {
-                    ReviewQueueView(viewModel: viewModel)
-                } else if viewModel.isDeveloper {
-                    gridContent
-                } else {
-                    UserUploadsView(viewModel: viewModel)
+                // ZStack 固定容器尺寸，避免两侧视图高度差导致布局在动画途中抖动。
+                // .transition(.opacity) 让旧视图淡出、新视图淡入，消除瞬切顿挫感。
+                ZStack(alignment: .topLeading) {
+                    if !viewModel.isLoggedIn {
+                        LoginRequiredView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .transition(.opacity)
+                    } else if viewModel.uploadMode == .pending {
+                        UploadManagerView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .transition(.opacity)
+                    } else if viewModel.uploadMode == .review {
+                        ReviewQueueView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .transition(.opacity)
+                    } else if viewModel.isDeveloper {
+                        gridContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .transition(.opacity)
+                    } else {
+                        UserUploadsView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .transition(.opacity)
+                    }
                 }
+                .animation(.easeInOut(duration: 0.18), value: viewModel.uploadMode)
+                .animation(.easeInOut(duration: 0.18), value: viewModel.isLoggedIn)
             } else if viewModel.currentTab == .collection {
                 if viewModel.selectedCollectionId != nil {
                     // 合集详情：顶部返回按钮 + 壁纸网格
@@ -839,12 +1051,12 @@ struct WallpaperGridView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "chevron.left")
                                 Text("所有合集")
-                            }.font(.system(size: 13, weight: .medium)).foregroundColor(.accentColor)
+                            }.font(.system(size: 13, weight: .medium)).foregroundColor(.brandPurple)
                         }.buttonStyle(.plain)
                         Spacer()
                         if let collectionId = viewModel.selectedCollectionId,
                            let collection = viewModel.collections.first(where: { $0.id == collectionId }) {
-                            Text(collection.name).font(.system(size: 15, weight: .bold))
+                            Text(collection.name).font(.sectionTitle)
                             Text("(\(collection.wallpaperIds.count)张)").font(.system(size: 13)).foregroundColor(.secondary)
                         }
                         Spacer()
@@ -854,88 +1066,137 @@ struct WallpaperGridView: View {
                     CollectionsGridView(viewModel: viewModel)
                 }
             } else {
+                // 已下载 tab：有选中详情时整页替换为详情视图
+                if viewModel.currentTab == .downloaded, let detailItem = viewModel.detailItem {
+                    DownloadedDetailView(item: detailItem, viewModel: viewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
+                } else {
                 if viewModel.currentTab == .downloaded {
-                    VStack(spacing: 10) {
-                        HStack {
-                            Picker("", selection: $viewModel.downloadedSubTab) {
-                                Text("云端下载").tag(DownloadedSubTab.local)
-                                Text("Workshop").tag(DownloadedSubTab.workshop)
-                                Text("本地导入").tag(DownloadedSubTab.localImports)
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 320)
-                            // 当前子标签缓存大小
-                            let subTabSize: String = {
-                                switch viewModel.downloadedSubTab {
-                                case .local:        return viewModel.cloudCacheSizeString
-                                case .workshop:     return viewModel.workshopCacheSizeString
-                                case .localImports: return viewModel.localImportSizeString
-                                }
-                            }()
-                            Text(subTabSize)
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            // 批量选择按钮（仅"云端下载"子标签可用）
-                            if viewModel.downloadedSubTab == .local && !viewModel.displayWallpapers.isEmpty {
-                                if viewModel.isBatchSelectMode {
-                                    Button(action: { viewModel.selectAllDownloaded() }) {
-                                        Text("全选")
-                                            .font(.system(size: 13, weight: .medium))
-                                            .foregroundColor(.accentColor)
-                                            .padding(.horizontal, 14).padding(.vertical, 6)
-                                            .background(Color.accentColor.opacity(0.1))
-                                            .clipShape(Capsule())
-                                    }.buttonStyle(.plain)
-                                }
-                                Button(action: { viewModel.isBatchSelectMode.toggle() }) {
-                                    Text(viewModel.isBatchSelectMode ? "退出选择" : "批量选择")
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundColor(viewModel.isBatchSelectMode ? .secondary : .primary)
-                                        .padding(.horizontal, 14).padding(.vertical, 6)
-                                        .background(Color.primary.opacity(0.06))
-                                        .clipShape(Capsule())
-                                }.buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 30)
-                    .padding(.bottom, 15)
+                    DownloadedHeaderView(viewModel: viewModel)
+                        .padding(.horizontal, 30)
+                        .padding(.bottom, 16)
                 }
                 if viewModel.currentTab == .slideshow {
                     VStack(spacing: 10) {
-                        HStack(spacing: 20) { Toggle(isOn: $viewModel.isSlideshowEnabled) { Text("启用自动轮播").font(.system(size: 14, weight: .bold)) }.toggleStyle(.switch); HStack(spacing: 8) { Text("切换频率:").font(.system(size: 13, weight: .medium)).foregroundColor(.secondary); Picker("", selection: $viewModel.slideshowInterval) { Text("1 分钟").tag(60.0); Text("15 分钟").tag(900.0); Text("1 小时").tag(3600.0); Text("24 小时").tag(86400.0) }.labelsHidden().frame(width: 100) }; Toggle(isOn: $viewModel.isSlideshowRandom) { Text("随机播放").font(.system(size: 13, weight: .medium)) }.toggleStyle(.switch); Spacer()
-                            if viewModel.isSlideshowEnabled && !viewModel.playlistIds.isEmpty {
-                                Button(action: { viewModel.triggerNextSlideshow() }) { HStack(spacing: 4) { Image(systemName: "forward.fill"); Text("立即切换") }.font(.system(size: 13, weight: .medium)).foregroundColor(.accentColor).padding(.horizontal, 12).padding(.vertical, 6).background(Color.accentColor.opacity(0.1)).clipShape(Capsule()) }.buttonStyle(.plain)
-                            }
-                            Button(action: { viewModel.playlistIds.removeAll(); viewModel.statusMessage = "轮播列表已清空"; DispatchQueue.main.asyncAfter(deadline: .now() + 2) { viewModel.statusMessage = "" } }) { HStack { Image(systemName: "trash"); Text("清空列表 (\(viewModel.playlistIds.count)张)") }.font(.system(size: 13, weight: .medium)).foregroundColor(.red).padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.1)).clipShape(Capsule()) }.buttonStyle(.plain) }
-                        if viewModel.isSlideshowEnabled && !viewModel.nextSlideshowCountdown.isEmpty { HStack { Image(systemName: "timer").font(.system(size: 12)).foregroundColor(.secondary); Text(viewModel.nextSlideshowCountdown).font(.system(size: 12, weight: .medium).monospacedDigit()).foregroundColor(.secondary); Spacer() } }
+                        HStack(spacing: 16) {
+                            Toggle(isOn: $viewModel.isSlideshowEnabled) {
+                                Text("自动轮播").font(.buttonLabel)
+                            }.toggleStyle(.switch)
 
-                        Divider().padding(.vertical, 4)
+                            HStack(spacing: 6) {
+                                Text("切换频率").font(.system(size: 13, weight: .medium)).foregroundColor(.secondary)
+                                Picker("", selection: $viewModel.slideshowInterval) {
+                                    Text("1 分钟").tag(60.0)
+                                    Text("15 分钟").tag(900.0)
+                                    Text("1 小时").tag(3600.0)
+                                    Text("24 小时").tag(86400.0)
+                                }.labelsHidden().frame(width: 100)
+                            }
+
+                            Toggle(isOn: $viewModel.isSlideshowRandom) {
+                                Text("随机").font(.system(size: 13, weight: .medium))
+                            }.toggleStyle(.switch)
+
+                            if viewModel.isSlideshowEnabled && !viewModel.nextSlideshowCountdown.isEmpty {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "timer")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                    Text(viewModel.nextSlideshowCountdown)
+                                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(Color.primary.opacity(0.05))
+                                .clipShape(Capsule())
+                            }
+
+                            Spacer()
+
+                            Button(action: {
+                                viewModel.playlistIds.removeAll()
+                                viewModel.statusMessage = "轮播列表已清空"
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { viewModel.statusMessage = "" }
+                            }) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "trash")
+                                    Text("清空列表 (\(viewModel.playlistIds.count)张)")
+                                }
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.red)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(Color.red.opacity(0.08))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(viewModel.playlistIds.isEmpty)
+                        }
+
+                        Divider().padding(.vertical, 2)
 
                         // ── 定时换壁纸 ──
                         HStack(spacing: 16) {
                             Toggle(isOn: $viewModel.isTimedPeriodEnabled) {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("定时换壁纸").font(.system(size: 14, weight: .bold))
-                                    Text("按早晨/下午/夜晚自动切换，与轮播互不影响")
+                                    Text("定时换壁纸").font(.sectionTitle)
+                                    Text("按早晨/下午/夜晚自动切换，启用后自动轮播将停止")
                                         .font(.system(size: 11)).foregroundColor(.secondary)
                                 }
                             }.toggleStyle(.switch)
                             Spacer()
                         }
+                        // 三个时段并排一行，高度与普通控件行相当
                         if viewModel.isTimedPeriodEnabled {
-                            ForEach(DayPeriod.allCases) { period in
-                                PeriodAssignmentRowView(period: period, viewModel: viewModel)
+                            HStack(spacing: 10) {
+                                ForEach(DayPeriod.allCases) { period in
+                                    PeriodCompactCardView(period: period, viewModel: viewModel)
+                                }
                             }
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
-                    }.padding(.horizontal, 30).padding(.bottom, 15)
+                    }
+                    .padding(.horizontal, 30).padding(.bottom, 15)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.85), value: viewModel.isTimedPeriodEnabled)
                 }
                 gridContent
+                } // end else (no detailItem)
             }
         }
     }
-    
+
+    @ViewBuilder
+    private func uploadPillButton(_ mode: UploadMode, label: String, badge: Int = 0) -> some View {
+        let isActive = viewModel.uploadMode == mode
+        Button(action: {
+            viewModel.uploadMode = mode
+        }) {
+            ZStack(alignment: .topTrailing) {
+                Text(label)
+                    .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                    .foregroundColor(isActive ? .white : .primary.opacity(0.5))
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background {
+                        if isActive {
+                            Capsule()
+                                .fill(Color.brandPurple)
+                                .matchedGeometryEffect(id: "uploadActivePill", in: uploadTabNamespace)
+                        }
+                    }
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Color.orange)
+                        .clipShape(Capsule())
+                        .offset(x: 2, y: -2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     // 彻底抛弃 LazyVGrid，使用绝对均匀的 HStack + VStack
     private var gridContent: some View {
         Group {
@@ -958,11 +1219,31 @@ struct WallpaperGridView: View {
                     Image(systemName: "tray").font(.system(size: 48)).foregroundColor(.primary.opacity(0.3))
                     Text(emptyText).font(.system(size: 16, weight: .medium)).foregroundColor(.primary.opacity(0.5))
                     if viewModel.currentTab == .pc && !viewModel.isSearching {
-                        Button(action: { viewModel.performSearch() }) {
-                            Label("重新加载", systemImage: "arrow.clockwise")
-                                .font(.system(size: 13, weight: .medium))
-                                .padding(.horizontal, 16).padding(.vertical, 7)
-                                .background(Color.primary.opacity(0.08)).clipShape(Capsule())
+                        HStack(spacing: 10) {
+                            if !viewModel.searchText.isEmpty {
+                                Button(action: { viewModel.searchText = "" }) {
+                                    Label("清除搜索", systemImage: "xmark.circle")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .padding(.horizontal, 16).padding(.vertical, 7)
+                                        .background(Color.primary.opacity(0.08)).clipShape(Capsule())
+                                }.buttonStyle(.plain)
+                            }
+                            Button(action: { viewModel.performSearch() }) {
+                                Label("重新加载", systemImage: "arrow.clockwise")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .padding(.horizontal, 16).padding(.vertical, 7)
+                                    .background(Color.primary.opacity(0.08)).clipShape(Capsule())
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                    if viewModel.currentTab == .downloaded && viewModel.downloadedSubTab == .local {
+                        Button(action: { viewModel.currentTab = .pc }) {
+                            Label("去电脑壁纸下载", systemImage: "arrow.right.circle.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 18).padding(.vertical, 8)
+                                .background(Color.brandPurple)
+                                .clipShape(Capsule())
                         }.buttonStyle(.plain)
                     }
                     Spacer()
@@ -1000,6 +1281,164 @@ struct WallpaperGridView: View {
     }
 }
 
+// MARK: - 已下载 Header
+
+struct DownloadedHeaderView: View {
+    @ObservedObject var viewModel: WallpaperViewModel
+    @Namespace private var tabNamespace
+
+    private var subTabSize: String {
+        switch viewModel.downloadedSubTab {
+        case .local:        return viewModel.cloudCacheSizeString
+        case .workshop:     return viewModel.workshopCacheSizeString
+        case .localImports: return viewModel.localImportSizeString
+        }
+    }
+
+    var body: some View {
+        Group {
+            if viewModel.isBatchSelectMode {
+                batchHeader
+            } else {
+                normalHeader
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: viewModel.isBatchSelectMode)
+    }
+
+    // MARK: Normal
+
+    private var normalHeader: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // 第一行：大标题 + 数量徽章 + 批量按钮
+            HStack(spacing: 10) {
+                Text("已下载")
+                    .font(.displayTitle)
+                    .foregroundColor(.primary)
+
+                let count = viewModel.displayWallpapers.count
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.brandPurple)
+                        .clipShape(Capsule())
+                }
+
+                Spacer()
+
+                if viewModel.downloadedSubTab == .local && !viewModel.displayWallpapers.isEmpty {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            viewModel.isBatchSelectMode = true
+                        }
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark.circle").font(.system(size: 12))
+                            Text("批量选择").font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.primary.opacity(0.65))
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.primary.opacity(0.06))
+                        .clipShape(Capsule())
+                    }.buttonStyle(.plain)
+                }
+            }
+
+            // 第二行：胶囊 Tab + 缓存大小
+            HStack(spacing: 12) {
+                HStack(spacing: 2) {
+                    pillButton(for: .local,        label: "云端下载")
+                    pillButton(for: .workshop,     label: "Workshop")
+                    pillButton(for: .localImports, label: "本地导入")
+                }
+                .padding(3)
+                .background(Color.primary.opacity(0.06))
+                .clipShape(Capsule())
+
+                Spacer()
+
+                if !subTabSize.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "externaldrive.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.5))
+                        Text(subTabSize)
+                            .font(.system(size: 12).monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        // 与 batchHeader 高度对齐，避免切换时布局跳动
+        .frame(minHeight: 70)
+    }
+
+    @ViewBuilder
+    private func pillButton(for tab: DownloadedSubTab, label: String) -> some View {
+        let isActive = viewModel.downloadedSubTab == tab
+        Button(action: {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                viewModel.downloadedSubTab = tab
+            }
+        }) {
+            Text(label)
+                .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                .foregroundColor(isActive ? .white : .primary.opacity(0.5))
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background {
+                    if isActive {
+                        Capsule()
+                            .fill(Color.brandPurple)
+                            .matchedGeometryEffect(id: "activePill", in: tabNamespace)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Batch mode
+
+    private var batchHeader: some View {
+        HStack(spacing: 12) {
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    viewModel.isBatchSelectMode = false
+                }
+            }) {
+                HStack(spacing: 5) {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold))
+                    Text("退出").font(.system(size: 13, weight: .medium))
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(Color.primary.opacity(0.06))
+                .clipShape(Capsule())
+            }.buttonStyle(.plain)
+
+            Text(viewModel.batchSelectedIds.isEmpty ? "点击卡片选择" : "已选 \(viewModel.batchSelectedIds.count) 张")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.primary)
+                .contentTransition(.numericText())
+                .animation(.spring(response: 0.3), value: viewModel.batchSelectedIds.count)
+
+            Spacer()
+
+            Button(action: { viewModel.selectAllDownloaded() }) {
+                Text("全选")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.brandPurple)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(Color.brandPurple.opacity(0.1))
+                    .clipShape(Capsule())
+            }.buttonStyle(.plain)
+        }
+        // 与 normalHeader 双行高度对齐，避免切换时布局跳动
+        .frame(minHeight: 70)
+    }
+}
+
 // MARK: - 批量操作底部栏
 
 struct BatchActionBarView: View {
@@ -1029,6 +1468,76 @@ struct BatchActionBarView: View {
 }
 
 // MARK: - 定时换壁纸：单行时间段设置
+
+// MARK: - 定时换壁纸：紧凑横排卡片（3个时段并排一行）
+
+struct PeriodCompactCardView: View {
+    let period: DayPeriod
+    @ObservedObject var viewModel: WallpaperViewModel
+
+    private var assignedItem: WallpaperItem? {
+        guard let id = viewModel.periodWallpaperIds[period.rawValue] else { return nil }
+        return viewModel.allWallpapers.first { $0.id == id }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: periodIcon)
+                .font(.system(size: 13))
+                .foregroundColor(periodColor)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(period.rawValue)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(assignedItem.map { $0.title.isEmpty ? "（无标题）" : $0.title } ?? "未指定")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button(action: { viewModel.periodPickerTargetPeriod = period }) {
+                Text(assignedItem == nil ? "选择" : "更换")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.brandPurple)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.brandPurple.opacity(0.1))
+                    .clipShape(Capsule())
+            }.buttonStyle(.plain)
+
+            if assignedItem != nil {
+                Button(action: { viewModel.periodWallpaperIds.removeValue(forKey: period.rawValue) }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary.opacity(0.45))
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(Color.primary.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .frame(maxWidth: .infinity)
+    }
+
+    private var periodIcon: String {
+        switch period {
+        case .morning:   return "sunrise.fill"
+        case .afternoon: return "sun.max.fill"
+        case .night:     return "moon.stars.fill"
+        }
+    }
+
+    private var periodColor: Color {
+        switch period {
+        case .morning:   return Color(hex: "#F59E0B")
+        case .afternoon: return Color(hex: "#3B82F6")
+        case .night:     return Color(hex: "#6366F1")
+        }
+    }
+}
+
+// MARK: - 定时换壁纸：竖排行（保留备用）
 
 struct PeriodAssignmentRowView: View {
     let period: DayPeriod
@@ -1076,9 +1585,9 @@ struct PeriodAssignmentRowView: View {
             Button(action: { viewModel.periodPickerTargetPeriod = period }) {
                 Text(assignedItem == nil ? "选择壁纸" : "更换")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(.brandPurple)
                     .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(Color.accentColor.opacity(0.1))
+                    .background(Color.brandPurple.opacity(0.1))
                     .clipShape(Capsule())
             }.buttonStyle(.plain)
 
@@ -1178,7 +1687,7 @@ struct PeriodWallpaperPickerView: View {
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
                                         .stroke(viewModel.periodWallpaperIds[period.rawValue] == item.id
-                                                ? Color.accentColor : Color.clear, lineWidth: 2)
+                                                ? Color.brandPurple : Color.clear, lineWidth: 2)
                                 )
                             }.buttonStyle(.plain)
                         }
@@ -1198,10 +1707,10 @@ struct SkeletonCardView: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(Color.primary.opacity(isAnimating ? 0.09 : 0.04))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.05), lineWidth: 1))
+            .fill(Color.primary.opacity(isAnimating ? 0.14 : 0.06))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.07), lineWidth: 1))
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
                     isAnimating = true
                 }
             }
@@ -1225,7 +1734,7 @@ struct CollectionsGridView: View {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("我的合集")
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.displayTitle)
                     if !viewModel.collections.isEmpty {
                         HStack(spacing: 6) {
                             Image(systemName: "square.stack.3d.up")
@@ -1260,7 +1769,7 @@ struct CollectionsGridView: View {
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 16).padding(.vertical, 8)
-                                .background(newName.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor)
+                                .background(newName.isEmpty ? Color.secondary.opacity(0.5) : Color.brandPurple)
                                 .cornerRadius(9)
                         }.buttonStyle(.plain).disabled(newName.isEmpty)
                         Button(action: { isCreating = false; newName = "" }) {
@@ -1281,10 +1790,10 @@ struct CollectionsGridView: View {
                                 .font(.system(size: 13, weight: .semibold))
                         }
                         .padding(.horizontal, 18).padding(.vertical, 9)
-                        .background(Color.accentColor)
+                        .background(Color.brandPurple)
                         .foregroundColor(.white)
                         .clipShape(Capsule())
-                        .shadow(color: Color.accentColor.opacity(0.35), radius: 10, y: 4)
+                        .shadow(color: Color.brandPurple.opacity(0.35), radius: 10, y: 4)
                     }.buttonStyle(.plain)
                 }
             }
@@ -1298,18 +1807,18 @@ struct CollectionsGridView: View {
                     Spacer()
                     ZStack {
                         Circle()
-                            .fill(Color.accentColor.opacity(0.09))
+                            .fill(Color.brandPurple.opacity(0.09))
                             .frame(width: 130, height: 130)
                         Circle()
-                            .fill(Color.accentColor.opacity(0.05))
+                            .fill(Color.brandPurple.opacity(0.05))
                             .frame(width: 100, height: 100)
                         Image(systemName: "rectangle.stack.badge.plus")
                             .font(.system(size: 46, weight: .thin))
-                            .foregroundColor(Color.accentColor.opacity(0.75))
+                            .foregroundColor(Color.brandPurple.opacity(0.75))
                     }
                     VStack(spacing: 10) {
                         Text("还没有合集")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.sectionTitle)
                             .foregroundColor(.primary.opacity(0.75))
                         Text("将喜欢的壁纸整理成合集，随时一键应用")
                             .font(.system(size: 14))
@@ -1321,10 +1830,10 @@ struct CollectionsGridView: View {
                             Text("创建第一个合集").font(.system(size: 14, weight: .semibold))
                         }
                         .padding(.horizontal, 26).padding(.vertical, 12)
-                        .background(Color.accentColor)
+                        .background(Color.brandPurple)
                         .foregroundColor(.white)
                         .clipShape(Capsule())
-                        .shadow(color: Color.accentColor.opacity(0.4), radius: 12, y: 5)
+                        .shadow(color: Color.brandPurple.opacity(0.4), radius: 12, y: 5)
                     }.buttonStyle(.plain)
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1347,6 +1856,7 @@ struct CollectionsGridView: View {
                         }
                     }
                     .padding(.horizontal, 30)
+                    .padding(.top, 12)
                     .padding(.bottom, 40)
                 }
             }
@@ -1372,18 +1882,18 @@ struct CreateCollectionCardView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.accentColor.opacity(0.07))
+                .fill(Color.brandPurple.opacity(0.07))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .strokeBorder(
-                            Color.accentColor.opacity(0.35),
+                            Color.brandPurple.opacity(0.35),
                             style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])
                         )
                 )
             VStack(spacing: 14) {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 34))
-                    .foregroundColor(Color.accentColor.opacity(0.85))
+                    .foregroundColor(Color.brandPurple.opacity(0.85))
                 TextField("输入合集名称…", text: $name)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14, weight: .medium))
@@ -1409,7 +1919,7 @@ struct CreateCollectionCardView: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 16).padding(.vertical, 7)
-                            .background(name.isEmpty ? Color.secondary.opacity(0.35) : Color.accentColor)
+                            .background(name.isEmpty ? Color.secondary.opacity(0.35) : Color.brandPurple)
                             .cornerRadius(8)
                     }.buttonStyle(.plain).disabled(name.isEmpty)
                 }
@@ -1453,53 +1963,55 @@ struct CollectionCardView: View {
             // ── 封面拼贴 ──
             coverLayer
 
-            // ── 底部渐变 ──
-            VStack(spacing: 0) {
-                Spacer()
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black.opacity(0.45), location: 0.5),
-                        .init(color: .black.opacity(0.85), location: 1)
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(height: 110)
+            // ── 底部渐变（仅在有封面图时显示，避免浅色模式下空合集出现黑色渐变块）──
+            if !coverItems.isEmpty {
+                VStack(spacing: 0) {
+                    Spacer()
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black.opacity(0.45), location: 0.5),
+                            .init(color: .black.opacity(0.85), location: 1)
+                        ],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                    .frame(height: 110)
+                }
             }
 
             // ── 底部信息 ──
             if !isRenaming {
+                let hasCover = !coverItems.isEmpty
                 VStack {
                     Spacer()
                     HStack(alignment: .bottom) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(collection.name)
                                 .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
+                                .foregroundColor(hasCover ? .white : .primary)
                                 .lineLimit(1)
                             HStack(spacing: 5) {
                                 Image(systemName: "photo.stack")
                                     .font(.system(size: 10))
-                                    .foregroundColor(.white.opacity(0.55))
+                                    .foregroundColor(hasCover ? .white.opacity(0.55) : .secondary)
                                 Text("\(collection.wallpaperIds.count) 张")
                                     .font(.system(size: 11))
-                                    .foregroundColor(.white.opacity(0.65))
+                                    .foregroundColor(hasCover ? .white.opacity(0.65) : .secondary)
                                 if collection.createdAt > 0 {
-                                    Text("·").foregroundColor(.white.opacity(0.3))
+                                    Text("·").foregroundColor(hasCover ? .white.opacity(0.3) : .secondary.opacity(0.5))
                                     Text(formattedDate(collection.createdAt))
                                         .font(.system(size: 11))
-                                        .foregroundColor(.white.opacity(0.45))
+                                        .foregroundColor(hasCover ? .white.opacity(0.45) : .secondary.opacity(0.7))
                                 }
                             }
                         }
                         Spacer()
-                        // 壁纸数量徽标
                         if collection.wallpaperIds.count > 0 {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.7))
+                                .foregroundColor(hasCover ? .white.opacity(0.7) : .secondary)
                                 .padding(7)
-                                .background(Color.white.opacity(0.15))
+                                .background(hasCover ? Color.white.opacity(0.15) : Color.primary.opacity(0.08))
                                 .clipShape(Circle())
                         }
                     }
@@ -1593,7 +2105,7 @@ struct CollectionCardView: View {
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 16).padding(.vertical, 7)
-                                .background(renameText.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
+                                .background(renameText.isEmpty ? Color.gray.opacity(0.4) : Color.brandPurple)
                                 .cornerRadius(8)
                         }.buttonStyle(.plain).disabled(renameText.isEmpty)
                     }
@@ -1626,7 +2138,7 @@ struct CollectionCardView: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(
                     LinearGradient(
-                        colors: [Color.primary.opacity(0.08), Color.primary.opacity(0.04)],
+                        colors: [Color.brandPurple.opacity(0.07), Color.brandPink.opacity(0.04)],
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     )
                 )
@@ -1634,9 +2146,14 @@ struct CollectionCardView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "rectangle.stack")
                             .font(.system(size: 34, weight: .thin))
-                            .foregroundColor(.primary.opacity(0.25))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.brandPurple.opacity(0.4), Color.brandPink.opacity(0.3)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
                         Text("空合集")
-                            .font(.system(size: 11))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.primary.opacity(0.2))
                     }
                 )
@@ -1721,6 +2238,7 @@ struct SidebarView: View {
     @Binding var isDarkMode: Bool
     @Binding var showSettings: Bool
     @Binding var isSidebarVisible: Bool
+    @AppStorage("isDarkMode") private var isDark: Bool = true
 
     private let navItems: [(AppTab, String)] = [
         (.pc,            "desktopcomputer"),
@@ -1736,86 +2254,360 @@ struct SidebarView: View {
 
             // ── Logo ──
             HStack(spacing: 10) {
-                Image(systemName: "camera.aperture")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.accentColor)
-                Text("胖楼壁纸")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.primary)
+                ZStack {
+                    LinearGradient.brand
+                        .mask(
+                            Image(systemName: "camera.aperture")
+                                .font(.system(size: 20, weight: .semibold))
+                        )
+                }
+                .frame(width: 22, height: 22)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("胖楼壁纸")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.primary)
+                    Text("壁纸管理器")
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundColor(.secondary.opacity(0.6))
+                }
+
                 Spacer()
+
                 Button(action: {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                         isSidebarVisible = false
                     }
                 }) {
                     Image(systemName: "sidebar.left")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.secondary.opacity(0.6))
-                        .frame(width: 26, height: 26)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary.opacity(0.5))
+                        .frame(width: 24, height: 24)
+                        .background(Color.primary.opacity(0.05))
+                        .cornerRadius(6)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("隐藏侧边栏")
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 22)
-            .padding(.bottom, 20)
+            .padding(.horizontal, 16)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
 
-            Divider().padding(.horizontal, 14).opacity(0.6)
+            Divider().padding(.horizontal, 12).opacity(0.5)
 
             // ── Nav Items ──
-            VStack(spacing: 2) {
-                ForEach(navItems, id: \.0) { tab, icon in
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // 壁纸 section
+                    SidebarSectionLabel(title: "壁纸")
+                    ForEach(navItems.prefix(3), id: \.0) { tab, icon in
+                        SidebarNavItemView(
+                            icon: icon,
+                            title: tab.rawValue,
+                            isSelected: viewModel.currentTab == tab && !showSettings
+                        ) {
+                            showSettings = false
+                            viewModel.currentTab = tab
+                        }
+                    }
+
+                    SidebarSectionLabel(title: "工具")
+                    ForEach(navItems.dropFirst(3), id: \.0) { tab, icon in
+                        SidebarNavItemView(
+                            icon: icon,
+                            title: tab.rawValue,
+                            isSelected: viewModel.currentTab == tab && !showSettings
+                        ) {
+                            showSettings = false
+                            viewModel.currentTab = tab
+                        }
+                    }
+
                     SidebarNavItemView(
-                        icon: icon,
-                        title: tab.rawValue,
-                        isSelected: viewModel.currentTab == tab && !showSettings
+                        icon: "gearshape.fill",
+                        title: "设置",
+                        isSelected: showSettings
                     ) {
-                        showSettings = false
-                        viewModel.currentTab = tab
+                        showSettings = true
                     }
                 }
-
-                // 设置（紧接上传壁纸下方）
-                SidebarNavItemView(
-                    icon: "gearshape.fill",
-                    title: "设置",
-                    isSelected: showSettings
-                ) {
-                    showSettings = true
-                }
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 10)
 
-            Spacer()
+            Divider().padding(.horizontal, 12).opacity(0.5)
 
-            Divider().padding(.horizontal, 14).opacity(0.6).padding(.bottom, 8)
+            // ── Current Wallpaper Card ──
+            SidebarCurrentWallpaperCard(viewModel: viewModel)
+
+            // ── Quick Actions ──
+            HStack(spacing: 8) {
+                Button(action: { viewModel.randomWallpaper() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "shuffle").font(.system(size: 11))
+                        Text("随机").font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.brandPurple)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(Color.brandPurple.opacity(0.1))
+                    .cornerRadius(8)
+                }.buttonStyle(.plain).help("随机换一张壁纸")
+
+                Button(action: { viewModel.importLocalWallpaper() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder.badge.plus").font(.system(size: 11))
+                        Text("导入").font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(Color.primary.opacity(0.06))
+                    .cornerRadius(8)
+                }.buttonStyle(.plain).help("导入本地壁纸")
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+
+            Divider().padding(.horizontal, 12).opacity(0.5)
 
             // ── Bottom Controls ──
-            VStack(spacing: 0) {
+            VStack(spacing: 2) {
                 // Theme toggle
                 HStack(spacing: 10) {
                     Image(systemName: isDarkMode ? "moon.fill" : "sun.max.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
-                        .frame(width: 18)
-                    Text(isDarkMode ? "深色" : "浅色")
-                        .font(.system(size: 13))
+                        .frame(width: 16)
+                    Text(isDarkMode ? "深色模式" : "浅色模式")
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
                     Spacer()
                     CustomThemeToggleView(isDarkMode: $isDarkMode)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 9)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
 
                 // User account
                 SidebarUserRowView(viewModel: viewModel)
             }
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
         }
         .frame(width: 188)
-        .background(Color.primary.opacity(0.025))
+        .background(isDark ? Color.sidebarDark : Color.sidebarLight)
+    }
+}
+
+// MARK: - Current Wallpaper Card
+
+struct SidebarCurrentWallpaperCard: View {
+    @ObservedObject var viewModel: WallpaperViewModel
+    @State private var videoThumbnail: NSImage? = nil
+    @State private var webPreviewImage: NSImage? = nil
+    @State private var lastLoadedPath: String = ""
+
+    private var isVideoPath: Bool {
+        let ext = (viewModel.currentWallpaperPath as NSString).pathExtension.lowercased()
+        return ["mp4", "mov", "m4v", "avi", "webm"].contains(ext)
+    }
+
+    private var isWebPath: Bool {
+        let ext = (viewModel.currentWallpaperPath as NSString).pathExtension.lowercased()
+        return ext == "html" || ext == "htm"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SidebarSectionLabel(title: "当前壁纸")
+
+            HStack(spacing: 10) {
+                // Thumbnail
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.06))
+
+                    if viewModel.currentWallpaperPath.isEmpty {
+                        Image(systemName: "photo")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary.opacity(0.35))
+                    } else if isVideoPath {
+                        if let thumb = videoThumbnail {
+                            Image(nsImage: thumb)
+                                .resizable()
+                                .scaledToFill()
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        } else {
+                            Image(systemName: "video.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(LinearGradient.brand)
+                        }
+                    } else if isWebPath {
+                        if let thumb = webPreviewImage {
+                            Image(nsImage: thumb)
+                                .resizable()
+                                .scaledToFill()
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        } else {
+                            Image(systemName: "globe")
+                                .font(.system(size: 14))
+                                .foregroundStyle(LinearGradient.brand)
+                        }
+                    } else if let img = NSImage(contentsOfFile: viewModel.currentWallpaperPath) {
+                        Image(nsImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    } else {
+                        Image(systemName: "photo")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary.opacity(0.35))
+                    }
+                }
+                .frame(width: 62, height: 40)
+                .clipped()
+                .overlay(RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        if viewModel.isSlideshowEnabled {
+                            Circle().fill(Color.green).frame(width: 5, height: 5)
+                            Text("轮播中")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.primary.opacity(0.8))
+                        } else {
+                            Text(viewModel.currentWallpaperPath.isEmpty ? "未设置" : (isVideoPath ? "动态壁纸" : (isWebPath ? "网页壁纸" : "静态壁纸")))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.primary.opacity(0.8))
+                        }
+                    }
+
+                    if viewModel.isSlideshowEnabled && !viewModel.nextSlideshowCountdown.isEmpty {
+                        Text(viewModel.nextSlideshowCountdown)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.6))
+                            .lineLimit(1)
+                    } else if !viewModel.currentWallpaperPath.isEmpty {
+                        let displayName = viewModel.currentWallpaperTitle.isEmpty
+                            ? (viewModel.currentWallpaperPath as NSString).lastPathComponent
+                            : viewModel.currentWallpaperTitle
+                        Text(displayName)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.55))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text("点击下方随机换一张")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.45))
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+        }
+        .onChange(of: viewModel.currentWallpaperPath) { newPath in
+            loadVideoThumbnailIfNeeded(path: newPath)
+        }
+        .onAppear {
+            loadVideoThumbnailIfNeeded(path: viewModel.currentWallpaperPath)
+        }
+    }
+
+    private func loadVideoThumbnailIfNeeded(path: String) {
+        guard !path.isEmpty, path != lastLoadedPath else { return }
+        lastLoadedPath = path
+        let ext = (path as NSString).pathExtension.lowercased()
+
+        if ext == "html" || ext == "htm" {
+            videoThumbnail = nil
+            let dir = URL(fileURLWithPath: (path as NSString).deletingLastPathComponent)
+            // 优先读 project.json 的 "preview" 字段（Workshop 壁纸常用 .gif 预览图）
+            var previewURL: URL? = nil
+            if let data = try? Data(contentsOf: dir.appendingPathComponent("project.json")),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let name = json["preview"] as? String, !name.isEmpty {
+                let candidate = dir.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    previewURL = candidate
+                }
+            }
+            if previewURL == nil {
+                let candidates = ["preview.jpg", "preview.jpeg", "preview.png",
+                                  "preview.gif", "thumbnail.jpg", "thumbnail.png"]
+                previewURL = candidates
+                    .map { dir.appendingPathComponent($0) }
+                    .first { FileManager.default.fileExists(atPath: $0.path) }
+            }
+            guard let finalURL = previewURL else { webPreviewImage = nil; return }
+            Task.detached(priority: .userInitiated) {
+                let img = WallpaperCacheManager.downsampledImage(at: finalURL, maxDimension: 160)
+                await MainActor.run { self.webPreviewImage = img }
+            }
+            return
+        }
+
+        webPreviewImage = nil
+        guard ["mp4", "mov", "m4v", "avi", "webm"].contains(ext) else {
+            videoThumbnail = nil
+            return
+        }
+        Task.detached(priority: .userInitiated) {
+            let url = URL(fileURLWithPath: path)
+
+            // 先尝试 AVAssetImageGenerator 提取首帧（webm 等格式在 macOS 可能不支持）
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 124, height: 80)
+            generator.requestedTimeToleranceBefore = CMTime(seconds: 2, preferredTimescale: 600)
+            generator.requestedTimeToleranceAfter  = CMTime(seconds: 2, preferredTimescale: 600)
+            for t in [CMTime(seconds: 1, preferredTimescale: 600), CMTime.zero] {
+                if let cgImage = try? generator.copyCGImage(at: t, actualTime: nil) {
+                    let nsImage = NSImage(cgImage: cgImage, size: .zero)
+                    await MainActor.run { self.videoThumbnail = nsImage }
+                    return
+                }
+            }
+
+            // 帧提取失败 → fallback：在同目录寻找预览图（workshop 壁纸常带 preview.jpg）
+            let dir = url.deletingLastPathComponent()
+            var previewURL: URL?
+            if let data = try? Data(contentsOf: dir.appendingPathComponent("project.json")),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let name = json["preview"] as? String, !name.isEmpty {
+                let candidate = dir.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: candidate.path) { previewURL = candidate }
+            }
+            if previewURL == nil {
+                let fallbacks = ["preview.jpg", "preview.jpeg", "preview.png",
+                                 "thumbnail.jpg", "thumbnail.png", "preview.gif"]
+                previewURL = fallbacks.map { dir.appendingPathComponent($0) }
+                    .first { FileManager.default.fileExists(atPath: $0.path) }
+            }
+            if let previewURL, let img = WallpaperCacheManager.downsampledImage(at: previewURL, maxDimension: 160) {
+                await MainActor.run { self.videoThumbnail = img }
+            }
+        }
+    }
+}
+
+struct SidebarSectionLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(.secondary.opacity(0.5))
+            .tracking(0.8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
     }
 }
 
@@ -1825,39 +2617,85 @@ struct SidebarNavItemView: View {
     let isSelected: Bool
     let action: () -> Void
     @State private var isHovered = false
+    @State private var bounceScale: CGFloat = 1.0
+    @State private var iconRotation: Double = 0
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 18, alignment: .center)
-                Text(title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                Spacer()
-            }
-            .foregroundColor(
-                isSelected ? .accentColor : (isHovered ? .primary : .primary.opacity(0.6))
-            )
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(
-                Group {
-                    if isSelected {
-                        Color.accentColor.opacity(0.13)
-                    } else if isHovered {
-                        Color.primary.opacity(0.06)
-                    } else {
-                        Color.clear
+        Button(action: {
+            triggerIconAnimation()
+            action()
+        }) {
+            HStack(spacing: 0) {
+                // Leading accent bar
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(isSelected ? LinearGradient.brand : LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 3, height: 18)
+                    .padding(.leading, 2)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+
+                HStack(spacing: 9) {
+                    Group {
+                        if isSelected {
+                            ZStack {
+                                LinearGradient.brand
+                                    .mask(Image(systemName: icon).font(.system(size: 13, weight: .medium)))
+                            }
+                            .frame(width: 16, height: 16)
+                        } else {
+                            Image(systemName: icon)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(isHovered ? .primary : .primary.opacity(0.55))
+                                .frame(width: 16)
+                        }
                     }
+                    .scaleEffect(bounceScale)
+                    .rotationEffect(.degrees(iconRotation))
+
+                    Text(title)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                        .foregroundColor(isSelected ? .brandPurple : (isHovered ? .primary : .primary.opacity(0.65)))
+                        .lineLimit(1)
+
+                    Spacer()
                 }
-            )
-            .cornerRadius(8)
+                .padding(.leading, 9)
+                .padding(.trailing, 10)
+                .padding(.vertical, 8)
+                .background(
+                    Group {
+                        if isSelected {
+                            Color.brandPurple.opacity(0.1)
+                        } else if isHovered {
+                            Color.primary.opacity(0.05)
+                        } else {
+                            Color.clear
+                        }
+                    }
+                )
+                .cornerRadius(8)
+            }
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: 0.12), value: isHovered)
+    }
+
+    private func triggerIconAnimation() {
+        // 弹性缩放：快速弹起，再 spring 回落
+        withAnimation(.spring(response: 0.16, dampingFraction: 0.38)) {
+            bounceScale = 1.32
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.62)) {
+                bounceScale = 1.0
+            }
+        }
+        // 齿轮图标额外旋转 90°
+        if icon == "gearshape.fill" {
+            withAnimation(.easeInOut(duration: 0.38)) {
+                iconRotation += 90
+            }
+        }
     }
 }
 
@@ -1874,50 +2712,84 @@ struct SidebarUserRowView: View {
             }
         }) {
             HStack(spacing: 10) {
-                if viewModel.isLoggedIn {
-                    let url = viewModel.currentProfile?.avatarURL ?? ""
-                    if !url.isEmpty, let imageURL = URL(string: url) {
-                        AsyncImage(url: imageURL) { phase in
-                            if case .success(let img) = phase {
-                                img.resizable().scaledToFill()
-                                    .frame(width: 22, height: 22)
-                                    .clipShape(Circle())
-                            } else {
-                                Image(systemName: "person.crop.circle.fill")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.accentColor)
+                // Avatar
+                ZStack {
+                    if viewModel.isLoggedIn {
+                        let url = viewModel.currentProfile?.avatarURL ?? ""
+                        if !url.isEmpty, let imageURL = URL(string: url) {
+                            AsyncImage(url: imageURL) { phase in
+                                if case .success(let img) = phase {
+                                    img.resizable().scaledToFill()
+                                        .frame(width: 28, height: 28)
+                                        .clipShape(Circle())
+                                } else {
+                                    defaultAvatarIcon
+                                }
                             }
+                        } else {
+                            defaultAvatarIcon
                         }
                     } else {
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.accentColor)
+                        Circle()
+                            .fill(Color.primary.opacity(0.07))
+                            .frame(width: 28, height: 28)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            )
                     }
-                    Text(viewModel.currentProfile?.username ?? "用户空间")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary.opacity(0.75))
-                        .lineLimit(1)
-                } else {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                        .frame(width: 22)
-                    Text("登录 / 注册")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
                 }
+
+                // Text
+                VStack(alignment: .leading, spacing: 1) {
+                    if viewModel.isLoggedIn {
+                        Text(viewModel.currentProfile?.username ?? "用户空间")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.primary.opacity(0.85))
+                            .lineLimit(1)
+                        Text("查看个人空间")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.6))
+                    } else {
+                        Text("未登录")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        Text("点击登录 / 注册")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.5))
+                    }
+                }
+
                 Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary.opacity(0.35))
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 9)
-            .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
-            .cornerRadius(8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            )
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .help(viewModel.isLoggedIn ? "用户空间" : "登录 / 注册")
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: 0.12), value: isHovered)
+    }
+
+    private var defaultAvatarIcon: some View {
+        ZStack {
+            Circle()
+                .fill(LinearGradient.brand)
+                .frame(width: 28, height: 28)
+            Image(systemName: "person.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.white)
+        }
     }
 }
 
@@ -1933,55 +2805,15 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 28) {
 
                 Text("设置")
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.displayTitle)
                     .padding(.bottom, 4)
-
-                // ── 壁纸 ──
-                SettingsSectionView(title: "壁纸") {
-                    SettingsRowView(icon: "aspectratio.fill", label: "适配方式") {
-                        Picker("", selection: $viewModel.wallpaperFit) {
-                            ForEach(WallpaperFit.allCases, id: \.self) { fit in
-                                Text(fit.rawValue).tag(fit)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 130)
-                    }
-                    Divider().padding(.leading, 50)
-                    SettingsRowView(icon: "display", label: "目标显示器") {
-                        Picker("", selection: $viewModel.targetScreenName) {
-                            ForEach(viewModel.availableScreenNames, id: \.self) { name in
-                                Text(name).tag(name)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 180)
-                    }
-                    Divider().padding(.leading, 50)
-                    SettingsRowView(
-                        icon: viewModel.videoVolume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                        label: "壁纸音量",
-                        subLabel: viewModel.videoVolume == 0 ? "静音" : "\(Int(viewModel.videoVolume * 100))%"
-                    ) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "speaker.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                            Slider(value: $viewModel.videoVolume, in: 0...1, step: 0.05)
-                                .frame(width: 160)
-                            Image(systemName: "speaker.wave.3.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
 
                 // ── 外观 ──
                 SettingsSectionView(title: "外观") {
                     SettingsRowView(icon: isDarkMode ? "moon.fill" : "sun.max.fill", label: "深色模式") {
                         Toggle("", isOn: $isDarkMode)
                             .labelsHidden()
-                            .toggleStyle(.switch)
+                            .toggleStyle(BrandSwitchStyle())
                     }
                 }
 
@@ -1994,7 +2826,7 @@ struct SettingsView: View {
                     ) {
                         Toggle("", isOn: $viewModel.isEnergySavingEnabled)
                             .labelsHidden()
-                            .toggleStyle(.switch)
+                            .toggleStyle(BrandSwitchStyle())
                     }
                 }
 
@@ -2006,7 +2838,7 @@ struct SettingsView: View {
                             set: { viewModel.toggleAutoStart(enable: $0) }
                         ))
                         .labelsHidden()
-                        .toggleStyle(.switch)
+                        .toggleStyle(BrandSwitchStyle())
                     }
                 }
 
@@ -2015,12 +2847,12 @@ struct SettingsView: View {
                     SettingsRowView(icon: "folder.badge.plus", label: "导入本地壁纸") {
                         Button(action: { viewModel.importLocalWallpaper() }) {
                             Text("选择文件")
-                                .font(.system(size: 13))
-                                .foregroundColor(.accentColor)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.brandPurple)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 6)
-                                .background(Color.accentColor.opacity(0.1))
-                                .cornerRadius(7)
+                                .background(Color.brandPurple.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 7))
                         }.buttonStyle(.plain)
                     }
                     Divider().padding(.leading, 50)
@@ -2028,22 +2860,22 @@ struct SettingsView: View {
                         HStack(spacing: 8) {
                             Button(action: { viewModel.changeCacheDirectory() }) {
                                 Text("更改")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(.accentColor)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.brandPurple)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 6)
-                                    .background(Color.accentColor.opacity(0.1))
-                                    .cornerRadius(7)
+                                    .background(Color.brandPurple.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 7))
                             }.buttonStyle(.plain)
                             if viewModel.cacheDirectoryPath != WallpaperCacheManager.defaultCacheDirectory.path {
                                 Button(action: { viewModel.resetCacheDirectory() }) {
                                     Text("重置")
-                                        .font(.system(size: 13))
+                                        .font(.system(size: 13, weight: .medium))
                                         .foregroundColor(.secondary)
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 6)
                                         .background(Color.secondary.opacity(0.08))
-                                        .cornerRadius(7)
+                                        .clipShape(RoundedRectangle(cornerRadius: 7))
                                 }.buttonStyle(.plain)
                             }
                         }
@@ -2056,12 +2888,12 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                             Button(action: { showClearCacheAlert = true }) {
                                 Text("清除缓存")
-                                    .font(.system(size: 13))
+                                    .font(.system(size: 13, weight: .medium))
                                     .foregroundColor(.red)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 6)
                                     .background(Color.red.opacity(0.08))
-                                    .cornerRadius(7)
+                                    .clipShape(RoundedRectangle(cornerRadius: 7))
                             }.buttonStyle(.plain)
                         }
                     }
@@ -2072,12 +2904,12 @@ struct SettingsView: View {
                     SettingsRowView(icon: "info.circle.fill", label: "关于胖楼壁纸") {
                         Button(action: { viewModel.showAbout = true }) {
                             Text("查看")
-                                .font(.system(size: 13))
-                                .foregroundColor(.accentColor)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.brandPurple)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 6)
-                                .background(Color.accentColor.opacity(0.1))
-                                .cornerRadius(7)
+                                .background(Color.brandPurple.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 7))
                         }.buttonStyle(.plain)
                     }
                 }
@@ -2101,9 +2933,10 @@ struct SettingsSectionView<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.secondary)
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.5))
+                .tracking(0.6)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 8)
             VStack(spacing: 0) {
@@ -2111,7 +2944,8 @@ struct SettingsSectionView<Content: View>: View {
             }
             .background(Color.primary.opacity(0.04))
             .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.07), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
         }
     }
 }
@@ -2126,7 +2960,7 @@ struct SettingsRowView<Control: View>: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 15))
-                .foregroundColor(.accentColor)
+                .foregroundColor(.brandPurple)
                 .frame(width: 22, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
@@ -2152,6 +2986,7 @@ struct SearchFilterBarView: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @State private var isHotSelected = false
     @State private var isDragTargeted = false
+    @FocusState private var isSearchFocused: Bool
 
     let types = ["全部", "静态壁纸", "动态壁纸"]
     let categories = ["全部", "魅力 | 迷人", "自制 | 艺术", "安逸 | 自由", "科幻 | 星云", "动漫 | 二次元", "自然 | 风景", "游戏 | 玩具"]
@@ -2175,11 +3010,17 @@ struct SearchFilterBarView: View {
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(
+                            isSearchFocused
+                                ? AnyShapeStyle(LinearGradient.brand)
+                                : AnyShapeStyle(Color.secondary)
+                        )
+                        .animation(.easeInOut(duration: 0.15), value: isSearchFocused)
                     TextField("搜索标题、描述、标签…", text: $viewModel.searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
+                        .focused($isSearchFocused)
                     if !viewModel.searchText.isEmpty {
                         Button(action: { viewModel.searchText = "" }) {
                             Image(systemName: "xmark.circle.fill")
@@ -2189,10 +3030,23 @@ struct SearchFilterBarView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.vertical, 9)
                 .background(Color.primary.opacity(0.06))
-                .cornerRadius(8)
-                .frame(maxWidth: 300)
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(
+                            isSearchFocused
+                                ? AnyShapeStyle(LinearGradient(
+                                    colors: [Color.brandPurple.opacity(0.6), Color.brandPink.opacity(0.6)],
+                                    startPoint: .leading, endPoint: .trailing
+                                  ))
+                                : AnyShapeStyle(Color.clear),
+                            lineWidth: 1.5
+                        )
+                )
+                .frame(maxWidth: 360)
+                .animation(.easeInOut(duration: 0.15), value: isSearchFocused)
 
                 Spacer()
 
@@ -2200,14 +3054,14 @@ struct SearchFilterBarView: View {
                 if viewModel.currentTab == .pc {
                     Button(action: { viewModel.randomWallpaper() }) {
                         HStack(spacing: 5) {
-                            Image(systemName: "shuffle").font(.system(size: 12))
+                            Image(systemName: "shuffle").font(.system(size: 12, weight: .medium))
                             Text("随机").font(.system(size: 12, weight: .medium))
                         }
                         .foregroundColor(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                         .background(Color.primary.opacity(0.06))
-                        .cornerRadius(7)
+                        .cornerRadius(8)
                     }.buttonStyle(.plain)
 
                     Button(action: { pickImageForSearch() }) {
@@ -2217,19 +3071,22 @@ struct SearchFilterBarView: View {
                             Text("以图搜图").font(.system(size: 12, weight: .medium))
                         }
                         .foregroundStyle(viewModel.imageSearchMode
-                            ? AnyShapeStyle(LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing))
+                            ? AnyShapeStyle(LinearGradient.brand)
                             : AnyShapeStyle(Color.secondary))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                         .background(viewModel.imageSearchMode
-                            ? AnyShapeStyle(LinearGradient(colors: [Color.blue.opacity(0.14), Color.purple.opacity(0.14)], startPoint: .leading, endPoint: .trailing))
+                            ? AnyShapeStyle(Color.brandPurple.opacity(0.1))
                             : AnyShapeStyle(Color.primary.opacity(0.06)))
-                        .cornerRadius(7)
+                        .cornerRadius(8)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 7)
+                            RoundedRectangle(cornerRadius: 8)
                                 .strokeBorder(
                                     viewModel.imageSearchMode
-                                        ? AnyShapeStyle(LinearGradient(colors: [.blue.opacity(0.55), .purple.opacity(0.55)], startPoint: .leading, endPoint: .trailing))
+                                        ? AnyShapeStyle(LinearGradient(
+                                            colors: [Color.brandPurple.opacity(0.5), Color.brandPink.opacity(0.5)],
+                                            startPoint: .leading, endPoint: .trailing
+                                          ))
                                         : AnyShapeStyle(Color.clear),
                                     lineWidth: 1
                                 )
@@ -2439,6 +3296,11 @@ struct SearchFilterBarView: View {
             }
         )
         .animation(.easeInOut(duration: 0.15), value: isDragTargeted)
+        .onChange(of: viewModel.currentTab) { _ in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                viewModel.closeAllFilterMenus()
+            }
+        }
     }
 
     private func handleImageDrop(providers: [NSItemProvider]) {
@@ -2490,59 +3352,93 @@ struct SearchFilterBarView: View {
 struct PaginationBarView: View {
     @ObservedObject var viewModel: WallpaperViewModel
     @State private var jumpPageText = ""
+    @State private var prevHovered = false
+    @State private var nextHovered = false
+
+    private var cur: Int { viewModel.currentPage }
+    private var total: Int { viewModel.totalPages }
+
+    // 计算要显示的页码列表，格式：[1, nil(…), 4, 5, 6, nil(…), 20]
+    private var pageSlots: [Int?] {
+        guard total > 1 else { return total == 1 ? [1] : [] }
+        if total <= 7 { return (1...total).map { Optional($0) } }
+        var slots: [Int?] = []
+        // Clamp so the window stays valid at both ends and always shows ≥3 consecutive pages
+        let left  = max(2, min(cur, total - 3))
+        let right = min(total - 1, max(cur + 2, 3))
+        slots.append(1)
+        if left > 2  { slots.append(nil) }
+        for p in left...right { slots.append(p) }
+        if right < total - 1 { slots.append(nil) }
+        slots.append(total)
+        return slots
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Previous
-            Button(action: { viewModel.currentPage -= 1 }) {
+        HStack(spacing: 0) {
+            // 左侧页码文字
+            if total > 1 {
+                Text("第 \(cur + 1) / \(total) 页")
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundColor(.primary.opacity(0.3))
+                    .padding(.trailing, 16)
+            }
+
+            // Prev
+            Button(action: { withAnimation { viewModel.currentPage -= 1 } }) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(viewModel.currentPage == 0 ? .primary.opacity(0.25) : .primary)
+                    .foregroundColor(cur == 0 ? .primary.opacity(0.2)
+                                     : (prevHovered ? Color(hex: "#A855F7") : .primary.opacity(0.7)))
                     .frame(width: 28, height: 28)
-                    .background(Color.primary.opacity(0.05))
+                    .background(prevHovered && cur > 0
+                                ? Color(hex: "#7C6BF5").opacity(0.1) : Color.primary.opacity(0.05))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(viewModel.currentPage == 0)
+            .disabled(cur == 0)
+            .onHover { prevHovered = $0 }
+            .animation(.easeInOut(duration: 0.12), value: prevHovered)
 
             // Page numbers
             HStack(spacing: 6) {
-                ForEach(0..<min(viewModel.totalPages, 3), id: \.self) { index in
-                    PageNumberCircleView(number: index + 1, isCurrent: viewModel.currentPage == index) {
-                        viewModel.currentPage = index
-                    }
-                }
-                if viewModel.totalPages > 3 {
-                    Text("…")
-                        .foregroundColor(.primary.opacity(0.35))
-                        .font(.system(size: 13))
-                    PageNumberCircleView(
-                        number: viewModel.totalPages,
-                        isCurrent: viewModel.currentPage == viewModel.totalPages - 1
-                    ) {
-                        viewModel.currentPage = viewModel.totalPages - 1
+                ForEach(Array(pageSlots.enumerated()), id: \.offset) { _, slot in
+                    if let p = slot {
+                        PageNumberCircleView(number: p, isCurrent: cur == p - 1) {
+                            withAnimation { viewModel.currentPage = p - 1 }
+                        }
+                    } else {
+                        Text("…")
+                            .font(.system(size: 12))
+                            .foregroundColor(.primary.opacity(0.3))
+                            .frame(width: 20)
                     }
                 }
             }
+            .padding(.horizontal, 8)
 
             // Next
-            Button(action: { viewModel.currentPage += 1 }) {
+            Button(action: { withAnimation { viewModel.currentPage += 1 } }) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(viewModel.currentPage >= viewModel.totalPages - 1 ? .primary.opacity(0.25) : .primary)
+                    .foregroundColor(cur >= total - 1 ? .primary.opacity(0.2)
+                                     : (nextHovered ? Color(hex: "#A855F7") : .primary.opacity(0.7)))
                     .frame(width: 28, height: 28)
-                    .background(Color.primary.opacity(0.05))
+                    .background(nextHovered && cur < total - 1
+                                ? Color(hex: "#7C6BF5").opacity(0.1) : Color.primary.opacity(0.05))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(viewModel.currentPage >= viewModel.totalPages - 1)
+            .disabled(cur >= total - 1)
+            .onHover { nextHovered = $0 }
+            .animation(.easeInOut(duration: 0.12), value: nextHovered)
 
             // Jump to page
-            if viewModel.totalPages > 5 {
+            if total > 7 {
                 HStack(spacing: 6) {
                     Text("跳转")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 11))
+                        .foregroundColor(.primary.opacity(0.3))
                     TextField("", text: $jumpPageText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
@@ -2550,19 +3446,28 @@ struct PaginationBarView: View {
                         .frame(width: 34, height: 26)
                         .background(Color.primary.opacity(0.05))
                         .cornerRadius(6)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.1), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+                        .onSubmit {
+                            if let page = Int(jumpPageText), page >= 1, page <= total {
+                                withAnimation { viewModel.currentPage = page - 1 }
+                                jumpPageText = ""
+                            }
+                        }
                     Button(action: {
-                        if let page = Int(jumpPageText), page >= 1, page <= viewModel.totalPages {
+                        if let page = Int(jumpPageText), page >= 1, page <= total {
                             withAnimation { viewModel.currentPage = page - 1 }
                             jumpPageText = ""
                         }
                     }) {
                         Text("Go")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.accentColor)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(Color(hex: "#7C6BF5"))
                     }.buttonStyle(.plain)
                 }
+                .padding(.leading, 16)
             }
+
+            Spacer()
         }
         .frame(maxWidth: .infinity)
     }
@@ -2619,7 +3524,7 @@ struct ResolutionPopoverView: View {
                     Button(action: applyCustomResolution) {
                         Text("确认").font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
                             .padding(.horizontal, 12).padding(.vertical, 5)
-                            .background(Color.accentColor.opacity(0.8)).cornerRadius(6)
+                            .background(Color.brandPurple.opacity(0.8)).cornerRadius(6)
                     }.buttonStyle(.plain)
                         .disabled(viewModel.customWidth.trimmingCharacters(in: .whitespaces).isEmpty &&
                                   viewModel.customHeight.trimmingCharacters(in: .whitespaces).isEmpty)

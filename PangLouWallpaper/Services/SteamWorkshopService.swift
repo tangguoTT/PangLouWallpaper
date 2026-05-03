@@ -193,9 +193,14 @@ class SteamWorkshopService: NSObject {
             guard let d = detailMap[item.id] else { return item }
             var updated = item
 
-            // Tags: [{tag: "Video"}, {tag: "Scene"}] → ["Video", "Scene"]
+            // GetPublishedFileDetails returns tags in two formats depending on the item:
+            //   flat:   [{tag: "Scene"}, ...]
+            //   nested: {"tags": [{tag: "Scene"}, ...]}
             if let tagObjects = d["tags"] as? [[String: Any]] {
                 updated.tags = tagObjects.compactMap { $0["tag"] as? String }
+            } else if let tagsObj = d["tags"] as? [String: Any],
+                      let tagArr = tagsObj["tags"] as? [[String: Any]] {
+                updated.tags = tagArr.compactMap { $0["tag"] as? String }
             }
 
             // file_size comes as a String in the Steam API
@@ -271,9 +276,17 @@ class SteamWorkshopService: NSObject {
     static func workshopItemDirectory(itemId: String) -> URL {
         let appManaged = appSteamCMDDirectory
             .appendingPathComponent("steamapps/workshop/content/431960/\(itemId)")
-        if FileManager.default.fileExists(atPath: appManaged.path) { return appManaged }
-        return FileManager.default.homeDirectoryForCurrentUser
+        let systemSteam = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Steam/steamapps/workshop/content/431960/\(itemId)")
+
+        // Only prefer the app-managed directory if it is non-empty.
+        // An empty directory is an artifact of a failed or interrupted download —
+        // returning it would mask the real content in the system Steam directory.
+        if FileManager.default.fileExists(atPath: appManaged.path) {
+            let contents = (try? FileManager.default.contentsOfDirectory(atPath: appManaged.path)) ?? []
+            if !contents.isEmpty { return appManaged }
+        }
+        return systemSteam
     }
 
     enum WallpaperEngineType: String {
@@ -285,30 +298,47 @@ class SteamWorkshopService: NSObject {
     static func detectWallpaperType(in directory: URL) -> WallpaperEngineType {
         let projectURL = directory.appendingPathComponent("project.json")
         guard let data = try? Data(contentsOf: projectURL),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let typeStr = json["type"] as? String else { return .unknown }
-        return WallpaperEngineType(rawValue: typeStr.lowercased()) ?? .unknown
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .unknown }
+        if let typeStr = json["type"] as? String, !typeStr.isEmpty {
+            return WallpaperEngineType(rawValue: typeStr.lowercased()) ?? .unknown
+        }
+        // 没有 "type" 字段时：有 "dependency"（依赖父壁纸）或顶层 "preset" 块
+        // 均为 Wallpaper Engine 预设型壁纸，需要 WE 运行时才能使用
+        if json["dependency"] != nil || json["preset"] is [String: Any] {
+            return .preset
+        }
+        return .unknown
     }
 
     /// Scans the item directory for the actual wallpaper file.
     ///
     /// Priority:
     ///   1. Read `project.json` → use the `"file"` key (exact match from developer).
-    ///   2. Fallback: pick the largest supported file, **excluding** preview thumbnails.
+    ///   2. Fallback: pick the largest supported file at the root level.
+    ///   3. Web-type fallback: recursive search for HTML files up to 4 levels deep.
     ///
-    /// Returns `nil` if the wallpaper type is scene/web/preset (requires Wallpaper Engine to render).
+    /// Returns `nil` if the wallpaper type is scene/preset (requires Wallpaper Engine).
     static func findWallpaperFile(in directory: URL) -> URL? {
         let supportedExts: Set<String> = ["mp4", "webm", "mov", "jpg", "jpeg", "png", "gif", "html", "htm"]
+        let thumbnailNames: Set<String> = ["preview.jpg", "preview.jpeg", "preview.png",
+                                            "thumbnail.jpg", "thumbnail.png"]
 
         // --- Step 1: parse project.json ---
+        var weType: WallpaperEngineType = .unknown
         let projectURL = directory.appendingPathComponent("project.json")
         if let data = try? Data(contentsOf: projectURL),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
 
             let typeStr = (json["type"] as? String ?? "").lowercased()
-            let weType  = WallpaperEngineType(rawValue: typeStr) ?? .unknown
+            weType = WallpaperEngineType(rawValue: typeStr) ?? .unknown
 
-            // Scene / web / preset cannot be used without Wallpaper Engine
+            // 没有 "type" 字段但有 "dependency"（依赖父壁纸）或顶层 "preset" 块
+            // → 属于预设型壁纸，需要 Wallpaper Engine 才能运行
+            if weType == .unknown && (json["dependency"] != nil || json["preset"] is [String: Any]) {
+                weType = .preset
+            }
+
+            // Scene / preset cannot be used without Wallpaper Engine
             if !weType.isSupported && weType != .unknown { return nil }
 
             // Use the exact filename the developer specified
@@ -320,24 +350,45 @@ class SteamWorkshopService: NSObject {
             }
         }
 
-        // --- Step 2: size-based fallback, excluding known thumbnail names ---
-        guard let contents = try? FileManager.default.contentsOfDirectory(
+        // --- Step 2: root-level size-based fallback ---
+        if let contents = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.fileSizeKey], options: .skipsHiddenFiles
+        ) {
+            let found = contents
+                .filter { url in
+                    guard supportedExts.contains(url.pathExtension.lowercased()) else { return false }
+                    return !thumbnailNames.contains(url.lastPathComponent.lowercased())
+                }
+                .sorted { a, b in
+                    let sizeA = (try? a.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    let sizeB = (try? b.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    return sizeA > sizeB
+                }
+                .first
+            if let f = found { return f }
+        }
+
+        // --- Step 3: recursive HTML search for web wallpapers whose HTML is in a subdirectory ---
+        guard weType == .web || weType == .unknown else { return nil }
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return nil }
 
-        let thumbnailNames: Set<String> = ["preview.jpg", "preview.jpeg", "preview.png",
-                                            "thumbnail.jpg", "thumbnail.png"]
-        return contents
-            .filter { url in
-                guard supportedExts.contains(url.pathExtension.lowercased()) else { return false }
-                return !thumbnailNames.contains(url.lastPathComponent.lowercased())
-            }
-            .sorted { a, b in
-                let sizeA = (try? a.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                let sizeB = (try? b.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                return sizeA > sizeB
-            }
-            .first
+        let dirDepth = directory.pathComponents.count
+        var best: (URL, Int)? = nil
+        for case let url as URL in enumerator {
+            let depth = url.pathComponents.count - dirDepth
+            if depth > 4 { enumerator.skipDescendants(); continue }
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
+            let ext = url.pathExtension.lowercased()
+            guard ext == "html" || ext == "htm" else { continue }
+            guard !thumbnailNames.contains(url.lastPathComponent.lowercased()) else { continue }
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if best == nil || size > best!.1 { best = (url, size) }
+        }
+        return best?.0
     }
 
     /// Returns bytes currently being written to the in-progress staging directory.
@@ -587,15 +638,23 @@ class SteamWorkshopService: NSObject {
 
                     let low = output.lowercased()
 
+                    // SteamCMD 启动时会输出 "Success."（登录成功），即使随后 item 下载失败也会留在
+                    // 累积 output 中。因此不用 output 里是否含 "success" 来判断下载结果，
+                    // 而是直接检查 item 目录是否已落盘且非空——这才是真正的成功标志。
+                    // 注意：下载失败时 SteamCMD 会创建空目录占位，必须排除这种情况；
+                    //       场景/预设类型虽然不支持播放，但文件确实下载成功（非空），
+                    //       resolveWorkshopDownloadResult 会识别类型并给出正确提示。
+                    let dirContents = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+                    let dirHasContent = !dirContents.isEmpty
+
                     if alreadyHasCode {
                         // 已提供过验证码，output 里含有回显的验证码文本，不再用关键词判断是否需要验证码
                         // 只判断密码错误和成功，其余视为登录失败
                         if low.contains("invalid password") || low.contains("failed (invalid password)") {
                             resumeOnce(.invalidCredentials)
                         } else if low.contains("invalid steam guard code") || low.contains("invalid 2fa code") || low.contains("two-factor code mismatch") {
-                            // 验证码本身填错了，让用户重新输入
                             resumeOnce(.needsSteamGuard)
-                        } else if low.contains("success") {
+                        } else if dirHasContent {
                             resumeOnce(.success)
                         } else {
                             let snippet = String(output.suffix(300))
@@ -615,7 +674,7 @@ class SteamWorkshopService: NSObject {
                             resumeOnce(.invalidCredentials)
                         } else if low.contains("timeout") && low.contains("login") {
                             resumeOnce(.invalidCredentials)
-                        } else if low.contains("success") {
+                        } else if dirHasContent {
                             resumeOnce(.success)
                         } else {
                             let snippet = String(output.suffix(300))

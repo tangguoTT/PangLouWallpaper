@@ -20,7 +20,7 @@ struct AuthView: View {
             // Header
             HStack {
                 Text(isLoginMode ? "登录账户" : "注册账户")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 17, weight: .semibold))
                 Spacer()
                 Button(action: { viewModel.showLoginSheet = false }) {
                     Image(systemName: "xmark.circle.fill")
@@ -60,11 +60,12 @@ struct AuthView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 12)
             } else if !errorMessage.isEmpty {
-                Text(errorMessage)
-                    .font(.system(size: 13))
-                    .foregroundColor(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 12)
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundColor(.red)
+                    Text(errorMessage).font(.system(size: 14)).foregroundColor(.red)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 12)
             }
 
             // Submit
@@ -75,11 +76,17 @@ struct AuthView: View {
                         .fontWeight(.bold).foregroundColor(.white)
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
-                .background(canSubmit ? Color.accentColor : Color.accentColor.opacity(0.4))
+                .background(
+                    canSubmit
+                        ? AnyShapeStyle(LinearGradient.brand)
+                        : AnyShapeStyle(Color.brandPurple.opacity(0.35))
+                )
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .shadow(color: canSubmit ? Color.brandPurple.opacity(0.35) : .clear, radius: 6, y: 3)
             }
             .buttonStyle(.plain)
             .disabled(!canSubmit || isLoading)
+            .animation(.easeInOut(duration: 0.15), value: canSubmit)
         }
         .padding(28)
         .frame(width: 360)
@@ -92,12 +99,13 @@ struct AuthView: View {
     }
 
     private func modeButton(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { withAnimation(.easeInOut(duration: 0.18)) { action() } }) {
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
-                .background(selected ? Color.accentColor : Color.clear)
+                .background(selected ? Color.brandPurple : Color.clear)
                 .foregroundColor(selected ? .white : .secondary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain)
     }
 

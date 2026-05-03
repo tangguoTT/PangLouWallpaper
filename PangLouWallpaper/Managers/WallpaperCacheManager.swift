@@ -9,6 +9,7 @@
 
 import AppKit
 import CryptoKit
+import ImageIO
 
 class WallpaperCacheManager {
     static let shared = WallpaperCacheManager()
@@ -18,8 +19,34 @@ class WallpaperCacheManager {
     private static let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.urlCache = nil
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 120
         return URLSession(configuration: config)
     }()
+
+    // MARK: - 内存缩略图缓存
+    // NSCache 在系统内存压力下自动驱逐条目，不需要手动管理。
+    // cost = 解码像素字节数（width × height × 4），上限约 150 MB。
+    private static let thumbnailCache: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 80
+        c.totalCostLimit = 150_000_000
+        return c
+    }()
+
+    /// 从本地文件加载缩略图，最长边缩放到 maxDimension 像素。
+    /// 使用 CGImageSource thumbnail API，全分辨率图像**不会**被解码进内存。
+    static func downsampledImage(at url: URL, maxDimension: Int) -> NSImage? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let opts: [CFString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: false
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
+        return NSImage(cgImage: cg, size: .zero)
+    }
 
     private static let customCacheDirKey = "CustomCacheDirectory"
 
@@ -138,18 +165,72 @@ class WallpaperCacheManager {
         }
     }
 
+    // MARK: - 磁盘缓存清理
+
+    /// cloud/ 目录当前占用字节数
+    func cloudCacheSize() -> Int64 {
+        let dir = cloudDirectory
+        guard let enumerator = fileManager.enumerator(
+            at: dir,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: .skipsHiddenFiles
+        ) else { return 0 }
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            if values?.isRegularFile == true {
+                total += Int64(values?.fileSize ?? 0)
+            }
+        }
+        return total
+    }
+
+    /// 当 cloud/ 缓存超过 limitBytes 时，按最久未访问顺序删除旧文件，直到降至 limitBytes 以下。
+    /// 默认上限 3 GB。
+    func cleanupCloudCacheIfNeeded(limitBytes: Int64 = 3 * 1024 * 1024 * 1024) {
+        let dir = cloudDirectory
+        guard let enumerator = fileManager.enumerator(
+            at: dir,
+            includingPropertiesForKeys: [.fileSizeKey, .contentAccessDateKey, .isRegularFileKey],
+            options: .skipsHiddenFiles
+        ) else { return }
+
+        var files: [(url: URL, size: Int64, accessed: Date)] = []
+        for case let fileURL as URL in enumerator {
+            let values = try? fileURL.resourceValues(
+                forKeys: [.fileSizeKey, .contentAccessDateKey, .isRegularFileKey]
+            )
+            guard values?.isRegularFile == true else { continue }
+            let size = Int64(values?.fileSize ?? 0)
+            let accessed = values?.contentAccessDate ?? .distantPast
+            files.append((fileURL, size, accessed))
+        }
+
+        let total = files.reduce(0) { $0 + $1.size }
+        guard total > limitBytes else { return }
+
+        // 按最久未访问排序，优先删除
+        files.sort { $0.accessed < $1.accessed }
+        var running = total
+        for file in files {
+            guard running > limitBytes else { break }
+            if (try? fileManager.removeItem(at: file.url)) != nil {
+                running -= file.size
+            }
+        }
+    }
+
     /// 加载完整壁纸图片（用于已下载缓存，写入 getLocalPath 路径）
     func fetchImage(for url: URL) async -> NSImage? {
         if url.isFileURL {
             return await Task.detached(priority: .utility) { NSImage(contentsOf: url) }.value
         }
         let localPath = getLocalPath(for: url)
-        if let image = await Task.detached(priority: .utility) { () -> NSImage? in
+        let diskImg = await Task.detached(priority: .utility) { () -> NSImage? in
             guard let data = try? Data(contentsOf: localPath) else { return nil }
             return NSImage(data: data)
-        }.value {
-            return image
-        }
+        }.value
+        if let image = diskImg { return image }
         do {
             let (data, _) = try await WallpaperCacheManager.session.data(from: url)
             return await Task.detached(priority: .utility) { () -> NSImage? in
@@ -159,23 +240,39 @@ class WallpaperCacheManager {
         } catch { return nil }
     }
 
-    /// 加载缩略图（写入 thumb_ 前缀路径，绝不影响 isDownloaded 判断）
+    /// 加载缩略图（写入 thumb_ 前缀路径，绝不影响 isDownloaded 判断）。
+    /// 本地文件使用 CGImageSource 降采样，远端图片命中磁盘缓存后同样降采样。
+    /// 解码结果写入内存 NSCache（自动在系统内存压力下驱逐）。
     func fetchThumbnail(for url: URL) async -> NSImage? {
+        let cacheKey = url.absoluteString as NSString
+        if let hit = WallpaperCacheManager.thumbnailCache.object(forKey: cacheKey) { return hit }
+
+        func store(_ img: NSImage) -> NSImage {
+            let cost = Int(img.size.width * img.size.height) * 4
+            WallpaperCacheManager.thumbnailCache.setObject(img, forKey: cacheKey, cost: cost)
+            return img
+        }
+
         if url.isFileURL {
-            return await Task.detached(priority: .utility) { NSImage(contentsOf: url) }.value
+            return await Task.detached(priority: .utility) {
+                guard let img = WallpaperCacheManager.downsampledImage(at: url, maxDimension: 400) else { return nil }
+                return store(img)
+            }.value
         }
+
         let localPath = getThumbnailPath(for: url)
-        if let image = await Task.detached(priority: .utility) { () -> NSImage? in
-            guard let data = try? Data(contentsOf: localPath) else { return nil }
-            return NSImage(data: data)
-        }.value {
-            return image
-        }
+        let diskImg = await Task.detached(priority: .utility) { () -> NSImage? in
+            guard FileManager.default.fileExists(atPath: localPath.path) else { return nil }
+            return WallpaperCacheManager.downsampledImage(at: localPath, maxDimension: 400)
+        }.value
+        if let img = diskImg { return store(img) }
+
         do {
             let (data, _) = try await WallpaperCacheManager.session.data(from: url)
             return await Task.detached(priority: .utility) { () -> NSImage? in
                 try? data.write(to: localPath)
-                return NSImage(data: data)
+                guard let img = WallpaperCacheManager.downsampledImage(at: localPath, maxDimension: 400) else { return nil }
+                return store(img)
             }.value
         } catch { return nil }
     }
